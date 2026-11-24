@@ -1,8 +1,8 @@
 """
-Notion Exporter (v3)
+Notion Exporter (v4)  –  PageOut for Notion
 
 Install:
-    pip install notion-client playwright pypdf python-docx
+    pip install notion-client playwright pypdf python-docx pillow
     playwright install chromium
 
 Exports Notion pages (from a database or single pages) to PDF, HTML,
@@ -10,6 +10,16 @@ Markdown, Text, Word and JSON, and can save the images with custom names.
 Two PDF engines: API (fast, no login, built from the page data) and
 Browser (prints the real Notion page).
 
+New in v4:
+  - Custom app icon (icon.ico / icon.png / icon.jpg / programmatic fallback)
+  - Notion-like CSS styling: clean typography, callout/quote/code blocks
+  - Page icon/emoji support in exports (show / hide / custom file)
+  - Dedicated cover/header page option
+  - Property layout styles: Notion Table / Inline Pills / Minimalist List / Hidden
+  - Expanded date & text formatting options
+  - Image options: maximize, one per page, show filenames, caption templates
+  - Page number position and format
+  - PyInstaller-safe resource paths
 """
 import os
 import re
@@ -46,33 +56,66 @@ try:
 except ImportError:                                   # headless use / tests
     tk = None
 
+
+# ----------------------------------------------------------------------
+# PyInstaller-safe resource path
+# ----------------------------------------------------------------------
+def _resource_dir() -> Path:
+    """Return the directory where bundled resources live (or the script dir)."""
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        return Path(sys._MEIPASS)
+    return Path(__file__).resolve().parent
+
+
+RESOURCE_DIR = _resource_dir()
+
+
+def resource_path(rel: str) -> Path:
+    """Resolve a resource path that works both as .py and compiled .exe."""
+    return RESOURCE_DIR / rel
+
+
 # ----------------------------------------------------------------------
 # Settings
 # ----------------------------------------------------------------------
-CONFIG_DIR = os.path.join(os.path.expanduser("~"), ".notion_pdf_exporter")
+CONFIG_DIR  = os.path.join(os.path.expanduser("~"), ".notion_pdf_exporter")
 CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
 PROFILE_DIR = os.path.join(CONFIG_DIR, "browser_profile")   # saved Notion login
 
-LINK_MODES = ["Keep all links", "Remove all links", "Remove only Notion-internal links"]
+LINK_MODES   = ["Keep all links", "Remove all links", "Remove only Notion-internal links"]
 OUTPUT_MODES = ["Merged + individual files", "Merged file only", "Individual files only"]
-PAGE_SIZES = ["A3", "A4", "A5", "Letter", "Legal", "Tabloid"]
+PAGE_SIZES   = ["A3", "A4", "A5", "Letter", "Legal", "Tabloid"]
 SORT_BUILTIN = ["Date", "Title", "Created", "Last edited", "Database order"]
 SOURCE_TYPES = ["Auto-detect", "Database", "Single page"]
-ENGINES = ["API (fast, no login needed)", "Browser (exact Notion look)"]
-SUB_MODES = ["Skip", "Inline in parent", "Separate files"]
-IMG_MODES = ["Embed in file", "Save locally & link", "Keep Notion link"]
+ENGINES      = ["API (fast, no login needed)", "Browser (exact Notion look)"]
+SUB_MODES    = ["Skip", "Inline in parent", "Separate files"]
+IMG_MODES    = ["Embed in file", "Save locally & link", "Keep Notion link"]
+ICON_MODES   = ["Show page icon", "Hide icon", "Custom icon file"]
+PROP_LAYOUTS = ["Notion Table", "Inline Pills", "Minimalist List", "Hidden"]
+FONT_FAMILIES= ["Sans-serif", "Serif", "Monospace"]
+TEXT_ALIGNS  = ["Left", "Justify"]
+HEAD_ALIGNS  = ["Left", "Center"]
+DATE_PRESETS = [
+    "YYYY-MM-DD", "DD/MM/YYYY", "MM/DD/YYYY",
+    "MMM DD, YYYY", "MMMM D, YYYY",
+    "D MMM YYYY", "ISO 8601", "Relative",
+]
+PAGENUM_POS  = ["Bottom Center", "Bottom Right", "Top Right"]
+PAGENUM_FMT  = ["Page X of Y", "X"]
+CAPTION_FMTS = ["{name}", "{name}.{ext}", "Figure {n}: {name}", "{original}", "{caption}"]
+
 NAME_PRESETS = ["{date} - {title}", "{title}", "{index} - {title}",
                 "{date:%Y-%m-%d} {title:60}", "{created} - {title}"]
-IMG_PRESETS = ["{page}_{n}", "{title} - {n}", "{date} - {title} - {n}",
-               "{page}_{n} - {caption}", "{original}"]
+IMG_PRESETS  = ["{page}_{n}", "{title} - {n}", "{date} - {title} - {n}",
+                "{page}_{n} - {caption}", "{original}"]
 
-FORMATS = ["pdf", "html", "md", "txt", "docx", "json"]
-FORMAT_LABELS = {"pdf": "PDF", "html": "HTML", "md": "Markdown", "txt": "Text",
-                 "docx": "Word", "json": "JSON", "images": "Images"}
-FOLDERS = {"pdf": "PDF", "html": "HTML", "md": "Markdown", "txt": "Text",
-           "docx": "Word", "json": "JSON"}
-EXTS = {"pdf": ".pdf", "html": ".html", "md": ".md", "txt": ".txt",
-        "docx": ".docx", "json": ".json"}
+FORMATS      = ["pdf", "html", "md", "txt", "docx", "json"]
+FORMAT_LABELS= {"pdf": "PDF", "html": "HTML", "md": "Markdown", "txt": "Text",
+                "docx": "Word", "json": "JSON", "images": "Images"}
+FOLDERS      = {"pdf": "PDF", "html": "HTML", "md": "Markdown", "txt": "Text",
+                "docx": "Word", "json": "JSON"}
+EXTS         = {"pdf": ".pdf", "html": ".html", "md": ".md", "txt": ".txt",
+                "docx": ".docx", "json": ".json"}
 
 DEFAULTS = {
     # source
@@ -89,15 +132,34 @@ DEFAULTS = {
     # images
     "img_handling": IMG_MODES[0], "img_format": "{page}_{n}", "img_subfolder": True,
     "img_cover": False,
+    # image layout (new)
+    "maximize_images": False, "one_image_per_page": False,
+    "show_image_names": False, "caption_format": "{name}",
     # content
     "expand_toggles": True, "light_theme": True, "clean_layout": True,
     "links": LINK_MODES[0], "custom_css": "",
     # pdf
     "page_size": "A4", "orientation": "Portrait", "margin_mm": 10, "scale": 100,
     "print_background": True, "page_numbers": False,
+    "page_num_position": PAGENUM_POS[0], "page_num_format": PAGENUM_FMT[0],
     # output
     "save_dir": "", "output_mode": OUTPUT_MODES[0], "merged_name": "All_Pages",
     "bookmarks": True, "skip_existing": False, "extra_wait": 2.0, "retries": 1,
+    # styling (new)
+    "font_family": FONT_FAMILIES[0],
+    "base_font_size": 16,
+    "line_spacing": 1.6,
+    "text_align": TEXT_ALIGNS[0],
+    "heading_align": HEAD_ALIGNS[0],
+    "title_separator": False,
+    "date_format_props": "YYYY-MM-DD",
+    # page icon (new)
+    "icon_mode": ICON_MODES[0],
+    "icon_custom_file": "",
+    # cover page (new)
+    "cover_page": False,
+    # property layout (new)
+    "prop_layout": PROP_LAYOUTS[0],
 }
 
 
@@ -126,6 +188,113 @@ def save_config(cfg):
 
 
 # ----------------------------------------------------------------------
+# App icon (custom + programmatic fallback)
+# ----------------------------------------------------------------------
+def _make_programmatic_icon():
+    """Generate a small Notion-style 'N' icon as a PhotoImage (Tkinter)."""
+    try:
+        from PIL import Image, ImageDraw, ImageFont, ImageTk
+        size = 64
+        img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
+        # Rounded square background
+        margin = 4
+        draw.rounded_rectangle([margin, margin, size - margin, size - margin],
+                                radius=12, fill="#000000")
+        # White "N"
+        try:
+            font = ImageFont.truetype("arial.ttf", 38)
+        except Exception:
+            font = ImageFont.load_default()
+        bbox = draw.textbbox((0, 0), "N", font=font)
+        tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+        draw.text(((size - tw) / 2 - bbox[0], (size - th) / 2 - bbox[1]),
+                  "N", fill="white", font=font)
+        return ImageTk.PhotoImage(img)
+    except Exception:
+        return None
+
+
+def apply_icon(root):
+    """
+    Set the window icon.  Search order:
+      1. icon.ico  (best on Windows – supports multi-res)
+      2. icon.png  (cross-platform)
+      3. icon.jpg  (project has this)
+      4. Programmatic PIL icon
+      5. No icon (silent fallback)
+    """
+    base = resource_path("icon")
+    for ext in (".ico", ".png", ".jpg", ".jpeg"):
+        p = base.with_suffix(ext)
+        if p.exists():
+            try:
+                if ext == ".ico":
+                    root.iconbitmap(str(p))
+                    return
+                else:
+                    from PIL import Image, ImageTk
+                    img = Image.open(str(p)).resize((64, 64), Image.LANCZOS)
+                    ph  = ImageTk.PhotoImage(img)
+                    root.iconphoto(True, ph)
+                    root._icon_ref = ph   # keep reference
+                    return
+            except Exception:
+                continue
+    # Programmatic fallback
+    ph = _make_programmatic_icon()
+    if ph:
+        root.iconphoto(True, ph)
+        root._icon_ref = ph
+
+
+# ----------------------------------------------------------------------
+# Date formatting helpers
+# ----------------------------------------------------------------------
+_DATE_FMT_MAP = {
+    "YYYY-MM-DD":    "%Y-%m-%d",
+    "DD/MM/YYYY":    "%d/%m/%Y",
+    "MM/DD/YYYY":    "%m/%d/%Y",
+    "MMM DD, YYYY":  "%b %d, %Y",
+    "MMMM D, YYYY":  "%B %-d, %Y" if sys.platform != "win32" else "%B %#d, %Y",
+    "D MMM YYYY":    "%-d %b %Y"  if sys.platform != "win32" else "%#d %b %Y",
+    "ISO 8601":      "%Y-%m-%dT%H:%M:%SZ",
+    "Relative":      None,   # handled specially
+}
+
+
+def format_date(iso_str: str, fmt_preset: str) -> str:
+    """Format an ISO date string using the given preset or strftime pattern."""
+    if not iso_str:
+        return ""
+    # Relative
+    if fmt_preset == "Relative":
+        try:
+            d = datetime.fromisoformat(iso_str[:10])
+            delta = (datetime.now() - d).days
+            if delta == 0:
+                return "Today"
+            if delta == 1:
+                return "Yesterday"
+            if delta < 0:
+                return f"In {-delta} days"
+            if delta < 30:
+                return f"{delta} days ago"
+            if delta < 365:
+                return f"{delta // 30} months ago"
+            return f"{delta // 365} years ago"
+        except Exception:
+            return iso_str[:10]
+    strfmt = _DATE_FMT_MAP.get(fmt_preset, fmt_preset)
+    if strfmt is None:
+        return iso_str[:10]
+    try:
+        return datetime.fromisoformat(iso_str[:10]).strftime(strfmt)
+    except Exception:
+        return iso_str[:10]
+
+
+# ----------------------------------------------------------------------
 # Notion helpers
 # ----------------------------------------------------------------------
 def api(fn, **kw):
@@ -147,8 +316,8 @@ def parse_database_id(text):
     """Accepts a raw ID or a full Notion URL (page or database)."""
     text = text.strip()
     path = urlparse(text).path if ("://" in text or "notion.so" in text) else text
-    seg = path.rstrip("/").rsplit("/", 1)[-1].replace("-", "")
-    m = re.search(r"([0-9a-fA-F]{32})$", seg)
+    seg  = path.rstrip("/").rsplit("/", 1)[-1].replace("-", "")
+    m    = re.search(r"([0-9a-fA-F]{32})$", seg)
     return m.group(1) if m else text
 
 
@@ -168,7 +337,7 @@ def plain(rts):
     return "".join(r.get("plain_text", "") for r in rts or [])
 
 
-def prop_to_text(prop):
+def prop_to_text(prop, date_fmt="YYYY-MM-DD"):
     t = prop.get("type")
     v = prop.get(t)
     if v is None:
@@ -176,7 +345,8 @@ def prop_to_text(prop):
     if t in ("title", "rich_text"):
         return plain(v)
     if t == "date":
-        return (v.get("start") or "")[:10]
+        raw = (v.get("start") or "")[:10]
+        return format_date(raw, date_fmt) if raw else ""
     if t in ("select", "status"):
         return v.get("name", "")
     if t == "multi_select":
@@ -188,7 +358,7 @@ def prop_to_text(prop):
     if t == "checkbox":
         return "Yes" if v else "No"
     if t in ("created_time", "last_edited_time"):
-        return str(v)[:10]
+        return format_date(str(v)[:10], date_fmt)
     if t in ("number", "url", "email", "phone_number"):
         return str(v)
     if t == "files":
@@ -202,7 +372,9 @@ def prop_to_text(prop):
             fv = fv.get("start")
         if fv is None:
             return ""
-        return str(fv)[:10] if ft == "date" else str(fv)
+        if ft == "date":
+            return format_date(str(fv)[:10], date_fmt)
+        return str(fv)
     return ""
 
 
@@ -214,11 +386,11 @@ def page_title(page):
 def page_fields(page, index=0, pad=3):
     props = page["properties"]
     f = {
-        "title": page_title(page),
-        "date": extract_date_from_props(props),
+        "title":   page_title(page),
+        "date":    extract_date_from_props(props),
         "created": page.get("created_time", "")[:10],
-        "edited": page.get("last_edited_time", "")[:10],
-        "parent": "",
+        "edited":  page.get("last_edited_time", "")[:10],
+        "parent":  "",
     }
     for k, v in props.items():
         txt = prop_to_text(v)
@@ -260,7 +432,7 @@ def passes_filter(page, prop, op, value):
     if not prop or not value:
         return True
     text = page_fields(page).get(prop.strip().lower(), "").lower()
-    v = value.strip().lower()
+    v    = value.strip().lower()
     if op == "contains":
         return v in text
     if op == "does not contain":
@@ -288,7 +460,7 @@ def query_all(notion, database_id, limit=None):
         out, cursor = [], None
         while True:
             size = min(100, limit - len(out)) if limit else 100
-            kw = dict(base, page_size=size)
+            kw   = dict(base, page_size=size)
             if cursor:
                 kw["start_cursor"] = cursor
             resp = api(fn, **kw)
@@ -304,7 +476,7 @@ def query_all(notion, database_id, limit=None):
         if ds_api is None:
             raise Exception("Could not access the database. " + str(first))
         try:
-            db = api(notion.databases.retrieve, database_id=database_id)
+            db      = api(notion.databases.retrieve, database_id=database_id)
             sources = db.get("data_sources") or []
             if not sources:
                 raise first
@@ -426,9 +598,9 @@ def strip_private(obj):
 # ----------------------------------------------------------------------
 EXT_OK = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".tif", ".tiff",
           ".heic", ".avif"}
-MIME = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif",
-        ".webp": "image/webp", ".svg": "image/svg+xml", ".bmp": "image/bmp",
-        ".tif": "image/tiff", ".tiff": "image/tiff", ".avif": "image/avif"}
+MIME   = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif",
+          ".webp": "image/webp", ".svg": "image/svg+xml", ".bmp": "image/bmp",
+          ".tif": "image/tiff", ".tiff": "image/tiff", ".avif": "image/avif"}
 
 
 def download(url, timeout=60):
@@ -459,6 +631,20 @@ def data_uri(img):
     return f"data:{mime};base64," + base64.b64encode(img["bytes"]).decode()
 
 
+def _load_custom_icon_data_uri(path: str) -> str:
+    """Load a custom icon file and return as a data URI."""
+    try:
+        p = Path(path)
+        if not p.exists():
+            return ""
+        raw = p.read_bytes()
+        ext  = p.suffix.lower()
+        mime = MIME.get(ext, "image/png")
+        return f"data:{mime};base64," + base64.b64encode(raw).decode()
+    except Exception:
+        return ""
+
+
 INTERNAL_RE = re.compile(r"^(/|https?://(www\.)?notion\.(so|site))", re.I)
 
 
@@ -468,7 +654,7 @@ class R:
     def __init__(self, cfg, kind, base_dir=None):
         self.cfg, self.kind, self.base_dir = cfg, kind, base_dir
         self.expand = bool(cfg.get("expand_toggles", True))
-        self.links = cfg.get("links", LINK_MODES[0])
+        self.links  = cfg.get("links", LINK_MODES[0])
 
     def keep_link(self, href):
         if not href:
@@ -499,38 +685,283 @@ class R:
 
 
 # ----------------------------------------------------------------------
-# HTML renderer
+# CSS / HTML building helpers
 # ----------------------------------------------------------------------
 esc = _html.escape
 
 TEXT_COLORS = {"gray": "#787774", "brown": "#9f6b53", "orange": "#d9730d", "yellow": "#cb912f",
                "green": "#448361", "blue": "#337ea9", "purple": "#9065b0", "pink": "#c14c8a",
                "red": "#d44c47"}
-BG_COLORS = {"gray": "#f1f1ef", "brown": "#f4eeee", "orange": "#fbecdd", "yellow": "#fbf3db",
-             "green": "#edf3ec", "blue": "#e7f3f8", "purple": "#f6f3f9", "pink": "#faf1f5",
-             "red": "#fdebec"}
+BG_COLORS   = {"gray": "#f1f1ef", "brown": "#f4eeee", "orange": "#fbecdd", "yellow": "#fbf3db",
+               "green": "#edf3ec", "blue": "#e7f3f8", "purple": "#f6f3f9", "pink": "#faf1f5",
+               "red": "#fdebec"}
 
-HTML_CSS = """
-body{font-family:-apple-system,"Segoe UI",Helvetica,Arial,sans-serif;max-width:860px;
-margin:2rem auto;padding:0 1.2rem;color:#37352f;line-height:1.6;font-size:16px}
-h1.title{font-size:2.3rem;margin:.2em 0 .3em}
-h1,h2,h3{line-height:1.25;margin:1.4em 0 .4em}
-table{border-collapse:collapse;margin:1em 0;width:100%}
-td,th{border:1px solid #e3e2e0;padding:.35em .6em;vertical-align:top;text-align:left}
-table.props th{width:28%;color:#787774;font-weight:500;background:#fafafa}
-blockquote{border-left:3px solid #37352f;margin:.8em 0;padding:.1em 1em}
-pre{background:#f7f6f3;padding:1em;border-radius:6px;overflow:auto;white-space:pre-wrap}
-code{background:#f1f0ee;padding:.1em .3em;border-radius:4px;font-family:Consolas,monospace}
-pre code{background:none;padding:0}
-.callout{display:flex;gap:.7em;background:#f1f1ef;border-radius:6px;padding:1em;margin:.8em 0}
-figure{margin:1em 0}figure img{max-width:100%}figcaption{color:#787774;font-size:.85em}
-.indent{margin-left:1.4em}.cols{display:flex;gap:1.5em}.col{flex:1;min-width:0}
-ul.todo{list-style:none;padding-left:.4em}.subpage{margin-top:2em}
-hr{border:none;border-top:1px solid #e3e2e0;margin:1.5em 0}
-section.page{margin-bottom:3em}
-@media print{body{max-width:none;margin:0;padding:0}
-pre,table,figure,.callout{break-inside:avoid}h1,h2,h3{break-after:avoid}}
+_FONT_STACKS = {
+    "Sans-serif": "-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif",
+    "Serif":      "Georgia, 'Times New Roman', Times, serif",
+    "Monospace":  "Consolas, 'Courier New', Courier, monospace",
+}
+
+
+def _build_html_css(cfg: dict) -> str:
+    """Generate the full CSS block incorporating user styling preferences."""
+    font_stack   = _FONT_STACKS.get(cfg.get("font_family", "Sans-serif"),
+                                    _FONT_STACKS["Sans-serif"])
+    base_size    = int(cfg.get("base_font_size", 16))
+    line_spacing = float(cfg.get("line_spacing", 1.6))
+    text_align   = cfg.get("text_align", "Left").lower()
+    head_align   = cfg.get("heading_align", "Left").lower()
+    h1_size_rem  = round(2.3 * base_size / 16, 2)
+    h1_sep       = "border-bottom: 2px solid #e3e2e0; padding-bottom: .3em;" if cfg.get("title_separator") else ""
+
+    css = f"""
+/* ── Notion Exporter – Notion-like stylesheet ── */
+*, *::before, *::after {{ box-sizing: border-box; }}
+
+body {{
+  font-family: {font_stack};
+  max-width: 860px;
+  margin: 2rem auto;
+  padding: 0 1.5rem;
+  color: #37352f;
+  line-height: {line_spacing};
+  font-size: {base_size}px;
+  text-align: {text_align};
+  -webkit-font-smoothing: antialiased;
+}}
+
+/* ── Page title ── */
+h1.notion-title {{
+  font-size: {h1_size_rem}rem;
+  font-weight: 700;
+  margin: .15em 0 .3em;
+  line-height: 1.2;
+  text-align: {head_align};
+  letter-spacing: -.02em;
+  {h1_sep}
+}}
+
+.notion-page-icon {{
+  font-size: 3.5rem;
+  line-height: 1;
+  display: block;
+  text-align: {head_align};
+  margin-bottom: .3em;
+  user-select: none;
+}}
+.notion-page-icon img {{
+  height: 3.5rem;
+  width: auto;
+  display: inline-block;
+  vertical-align: bottom;
+}}
+
+/* ── Headings ── */
+h1, h2, h3 {{
+  font-weight: 600;
+  line-height: 1.25;
+  margin: 1.5em 0 .4em;
+  text-align: {head_align};
+  color: #37352f;
+}}
+h1 {{ font-size: 1.875em; }}
+h2 {{ font-size: 1.5em; }}
+h3 {{ font-size: 1.25em; }}
+
+/* ── Cover page ── */
+.notion-cover-page {{
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 60vh;
+  padding: 3rem 0 2rem;
+}}
+.notion-cover-page + .notion-page-break {{
+  page-break-after: always;
+  break-after: page;
+  height: 0;
+  margin: 0;
+}}
+
+/* ── Property tables ── */
+table.props-table {{
+  border-collapse: collapse;
+  margin: 1em 0 1.5em;
+  width: 100%;
+  font-size: .9em;
+}}
+table.props-table th {{
+  width: 28%;
+  color: #787774;
+  font-weight: 500;
+  background: #fafafa;
+  text-align: left;
+  padding: .4em .7em;
+  border: 1px solid #e3e2e0;
+  vertical-align: top;
+}}
+table.props-table td {{
+  padding: .4em .7em;
+  border: 1px solid #e3e2e0;
+  vertical-align: top;
+}}
+
+/* ── Inline property pills ── */
+.props-pills {{
+  display: flex;
+  flex-wrap: wrap;
+  gap: .4em;
+  margin: .6em 0 1.2em;
+}}
+.props-pills .pill {{
+  display: inline-flex;
+  align-items: center;
+  gap: .3em;
+  background: #f1f1ef;
+  border-radius: 4px;
+  padding: .15em .55em;
+  font-size: .82em;
+  color: #37352f;
+  line-height: 1.4;
+}}
+.props-pills .pill-key {{
+  color: #787774;
+  font-weight: 500;
+}}
+.props-pills .pill-val {{ color: #37352f; }}
+
+/* ── Minimalist list ── */
+dl.props-list {{
+  margin: .5em 0 1.5em;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: .2em .8em;
+  font-size: .9em;
+}}
+dl.props-list dt {{
+  color: #787774;
+  font-weight: 500;
+  white-space: nowrap;
+}}
+dl.props-list dd {{
+  margin: 0;
+  color: #37352f;
+}}
+
+/* ── Tables ── */
+table {{
+  border-collapse: collapse;
+  margin: 1em 0;
+  width: 100%;
+}}
+td, th {{
+  border: 1px solid #e3e2e0;
+  padding: .4em .6em;
+  vertical-align: top;
+  text-align: left;
+}}
+thead th, table th {{
+  background: #fafafa;
+  font-weight: 600;
+}}
+
+/* ── Blockquote / Quote ── */
+blockquote {{
+  border-left: 3px solid #37352f;
+  margin: 1em 0;
+  padding: .2em 1em;
+  color: #37352f;
+}}
+
+/* ── Code ── */
+pre {{
+  background: #f7f6f3;
+  border: 1px solid #e3e2e0;
+  border-radius: 6px;
+  padding: 1em 1.2em;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: .88em;
+  margin: 1em 0;
+}}
+code {{
+  background: #f1f0ee;
+  padding: .15em .35em;
+  border-radius: 4px;
+  font-family: Consolas, 'Courier New', monospace;
+  font-size: .88em;
+}}
+pre code {{
+  background: none;
+  padding: 0;
+  font-size: 1em;
+  border-radius: 0;
+}}
+
+/* ── Callout ── */
+.callout {{
+  display: flex;
+  gap: .8em;
+  border-radius: 6px;
+  padding: 1em 1.1em;
+  margin: 1em 0;
+  background: #f7f6f3;
+  border: 1px solid #e3e2e0;
+}}
+.callout .callout-icon {{
+  font-size: 1.3em;
+  line-height: 1.4;
+  flex-shrink: 0;
+}}
+.callout .callout-body {{ flex: 1; min-width: 0; }}
+
+/* ── Images ── */
+figure {{
+  margin: 1.2em 0;
+}}
+figure img {{
+  max-width: 100%;
+  height: auto;
+  border-radius: 4px;
+  display: block;
+}}
+figcaption {{
+  color: #787774;
+  font-size: .82em;
+  margin-top: .3em;
+  font-style: italic;
+}}
+/* Maximize-image mode */
+.maximize-images figure img {{
+  width: 100%;
+  object-fit: contain;
+}}
+/* One-per-page mode */
+.one-image-per-page figure {{
+  page-break-after: always;
+  break-after: page;
+}}
+
+/* ── Misc ── */
+.indent  {{ margin-left: 1.4em; }}
+.cols    {{ display: flex; gap: 1.5em; }}
+.col     {{ flex: 1; min-width: 0; }}
+ul.todo  {{ list-style: none; padding-left: .4em; }}
+hr       {{ border: none; border-top: 1px solid #e3e2e0; margin: 1.5em 0; }}
+section.page {{ margin-bottom: 3em; }}
+.subpage {{ margin-top: 2em; }}
+p        {{ margin: .5em 0; }}
+
+/* ── Print / PDF ── */
+@media print {{
+  body {{ max-width: none; margin: 0; padding: 1cm; }}
+  pre, table, figure, .callout {{ break-inside: avoid; }}
+  h1, h2, h3 {{ break-after: avoid; }}
+  .notion-cover-page {{ page-break-after: always; break-after: page; min-height: 80vh; }}
+}}
 """
+    return css
 
 
 def color_style(color):
@@ -543,6 +974,83 @@ def color_style(color):
     return f"color:{c};" if c else ""
 
 
+# ----------------------------------------------------------------------
+# Property HTML rendering  (all four layouts)
+# ----------------------------------------------------------------------
+def props_html(rows, layout: str, cfg: dict) -> str:
+    """Render property rows according to the chosen layout style."""
+    if not rows or layout == "Hidden":
+        return ""
+    if layout == "Notion Table":
+        inner = "".join(
+            f"<tr><th>{esc(k)}</th><td>{esc(v)}</td></tr>" for k, v in rows
+        )
+        return f'<table class="props-table">{inner}</table>'
+    if layout == "Inline Pills":
+        pills = "".join(
+            f'<span class="pill"><span class="pill-key">{esc(k)}:</span>'
+            f'<span class="pill-val">{esc(v)}</span></span>'
+            for k, v in rows
+        )
+        return f'<div class="props-pills">{pills}</div>'
+    if layout == "Minimalist List":
+        items = "".join(f"<dt>{esc(k)}</dt><dd>{esc(v)}</dd>" for k, v in rows)
+        return f'<dl class="props-list">{items}</dl>'
+    return ""
+
+
+# ----------------------------------------------------------------------
+# Icon HTML
+# ----------------------------------------------------------------------
+def _page_icon_html(page, cfg: dict) -> str:
+    """Return an HTML snippet for the page icon based on icon_mode setting."""
+    mode = cfg.get("icon_mode", ICON_MODES[0])
+    if mode == "Hide icon":
+        return ""
+    if mode == "Custom icon file":
+        path = cfg.get("icon_custom_file", "")
+        if path:
+            uri = _load_custom_icon_data_uri(path)
+            if uri:
+                return f'<span class="notion-page-icon"><img src="{esc(uri, quote=True)}" alt="icon"></span>'
+        # fall through to page icon
+    # Show page icon (default)
+    if page:
+        icon = page.get("icon") or {}
+        if icon.get("type") == "emoji":
+            return f'<span class="notion-page-icon">{esc(icon["emoji"])}</span>'
+        if icon.get("type") in ("external", "file"):
+            url = (icon.get(icon.get("type")) or {}).get("url", "")
+            if url:
+                return (f'<span class="notion-page-icon">'
+                        f'<img src="{esc(url, quote=True)}" alt="icon"></span>')
+    return ""
+
+
+# ----------------------------------------------------------------------
+# Caption formatting helper
+# ----------------------------------------------------------------------
+def _build_caption(fmt_template: str, img: dict, img_num: int) -> str:
+    """Build an image caption from the template."""
+    url  = img.get("url", "")
+    path = img.get("path", "") or url
+    base = os.path.basename(unquote(urlparse(url).path))
+    name, _ext = os.path.splitext(base)
+    ext  = (_ext.lstrip(".")) if _ext else img.get("ext", ".png").lstrip(".")
+    caption_text = img.get("caption", "")
+    original     = name
+    result = fmt_template
+    result = result.replace("{name}",     name or base)
+    result = result.replace("{ext}",      ext)
+    result = result.replace("{n}",        str(img_num))
+    result = result.replace("{original}", original)
+    result = result.replace("{caption}",  caption_text)
+    return result
+
+
+# ----------------------------------------------------------------------
+# HTML renderer
+# ----------------------------------------------------------------------
 def rt_html(rts, r):
     out = []
     for x in rts or []:
@@ -571,41 +1079,46 @@ def rt_html(rts, r):
     return "".join(out)
 
 
-def blocks_html(blocks, r):
+def blocks_html(blocks, r, img_counter=None):
+    if img_counter is None:
+        img_counter = [0]
     out, i = [], 0
     while i < len(blocks):
         b = blocks[i]
         t = b["type"]
         if t in LIST_TYPES:
-            tag = "ol" if t == "numbered_list_item" else "ul"
-            cls = ' class="todo"' if t == "to_do" else ""
+            tag  = "ol" if t == "numbered_list_item" else "ul"
+            cls  = ' class="todo"' if t == "to_do" else ""
             items = []
             while i < len(blocks) and blocks[i]["type"] == t:
-                bb = blocks[i]
-                d = bb[t]
+                bb    = blocks[i]
+                d     = bb[t]
                 inner = rt_html(d.get("rich_text"), r)
                 if t == "to_do":
-                    chk = " checked" if d.get("checked") else ""
+                    chk   = " checked" if d.get("checked") else ""
                     inner = f'<input type="checkbox" disabled{chk}> ' + inner
-                items.append(f"<li>{inner}{blocks_html(bb.get('children', []), r)}</li>")
+                items.append(f"<li>{inner}{blocks_html(bb.get('children', []), r, img_counter)}</li>")
                 i += 1
             out.append(f"<{tag}{cls}>{''.join(items)}</{tag}>")
             continue
-        out.append(block_html(b, r))
+        out.append(block_html(b, r, img_counter))
         i += 1
     return "\n".join(x for x in out if x)
 
 
-def block_html(b, r):
-    t = b["type"]
-    d = b.get(t) or {}
+def block_html(b, r, img_counter=None):
+    if img_counter is None:
+        img_counter = [0]
+    t    = b["type"]
+    d    = b.get(t) or {}
     kids = b.get("children", [])
+    cfg  = r.cfg
 
     def rt():
         return rt_html(d.get("rich_text"), r)
 
     def sub():
-        return blocks_html(kids, r)
+        return blocks_html(kids, r, img_counter)
 
     def indent():
         return f'<div class="indent">{sub()}</div>' if kids else ""
@@ -621,14 +1134,16 @@ def block_html(b, r):
     if t == "quote":
         return f"<blockquote>{rt()}{sub()}</blockquote>"
     if t == "callout":
-        ic = d.get("icon") or {}
-        emoji = ic.get("emoji", "") if ic.get("type") == "emoji" else ""
-        st = color_style(d.get("color"))
-        st = f' style="{st}"' if st else ""
-        return f'<div class="callout"{st}><span>{esc(emoji)}</span><div>{rt()}{sub()}</div></div>'
+        ic    = d.get("icon") or {}
+        emoji = ic.get("emoji", "") if ic.get("type") == "emoji" else "💡"
+        st    = color_style(d.get("color"))
+        st_   = f' style="{st}"' if st else ""
+        return (f'<div class="callout"{st_}>'
+                f'<span class="callout-icon">{esc(emoji)}</span>'
+                f'<div class="callout-body">{rt()}{sub()}</div></div>')
     if t == "code":
         lang = esc(d.get("language", ""))
-        cap = rt_html(d.get("caption"), r)
+        cap  = rt_html(d.get("caption"), r)
         return (f'<pre><code class="language-{lang}">{esc(plain(d.get("rich_text")))}</code></pre>'
                 + (f"<p><em>{cap}</em></p>" if cap else ""))
     if t == "divider":
@@ -642,24 +1157,38 @@ def block_html(b, r):
             if not url:
                 return ""
             img = {"url": url}
-        cap = rt_html(d.get("caption"), r)
-        return (f'<figure><img src="{esc(r.img_src(img), quote=True)}" alt="{esc(plain(d.get("caption")))}">'
-                + (f"<figcaption>{cap}</figcaption>" if cap else "") + "</figure>")
+        img_counter[0] += 1
+        num = img_counter[0]
+        # Determine caption
+        notion_cap = rt_html(d.get("caption"), r)
+        show_names = cfg.get("show_image_names", False)
+        caption_html = ""
+        if show_names and not notion_cap:
+            cap_text = _build_caption(cfg.get("caption_format", "{name}"), img, num)
+            caption_html = f"<figcaption>{esc(cap_text)}</figcaption>"
+        elif notion_cap:
+            caption_html = f"<figcaption>{notion_cap}</figcaption>"
+        # Page-break after image?
+        one_per = cfg.get("one_image_per_page", False)
+        style   = ' style="page-break-after:always;break-after:page;"' if one_per else ""
+        return (f'<figure{style}><img src="{esc(r.img_src(img), quote=True)}" '
+                f'alt="{esc(plain(d.get("caption")))}">'
+                + caption_html + "</figure>")
     if t in ("video", "file", "pdf", "audio"):
-        src = d.get(d.get("type")) or {}
-        url = src.get("url", "")
+        src  = d.get(d.get("type")) or {}
+        url  = src.get("url", "")
         name = plain(d.get("caption")) or d.get("name") or url.split("?")[0].rsplit("/", 1)[-1] or t
         if d.get("type") == "external" and r.keep_link(url):
             return f'<p>📎 <a href="{esc(url, quote=True)}">{esc(name)}</a></p>'
         return f"<p>📎 {esc(name)}</p>"
     if t in ("bookmark", "embed", "link_preview"):
-        url = d.get("url", "")
+        url  = d.get("url", "")
         text = plain(d.get("caption")) or url
         if r.keep_link(url):
             return f'<p>🔗 <a href="{esc(url, quote=True)}">{esc(text)}</a></p>'
         return f"<p>🔗 {esc(text)}</p>"
     if t == "table":
-        rows = [x for x in kids if x["type"] == "table_row"]
+        rows  = [x for x in kids if x["type"] == "table_row"]
         hdr, rhdr = d.get("has_column_header"), d.get("has_row_header")
         s = ["<table>"]
         for ri, row in enumerate(rows):
@@ -671,7 +1200,7 @@ def block_html(b, r):
         s.append("</table>")
         return "".join(s)
     if t == "column_list":
-        cols = "".join(f'<div class="col">{blocks_html(c.get("children", []), r)}</div>' for c in kids)
+        cols = "".join(f'<div class="col">{blocks_html(c.get("children", []), r, img_counter)}</div>' for c in kids)
         return f'<div class="cols">{cols}</div>'
     if t in ("column", "synced_block"):
         return sub()
@@ -679,7 +1208,7 @@ def block_html(b, r):
         s = b.get("_sub")
         if s:
             return (f'<section class="subpage"><h2>📄 {esc(s["title"])}</h2>'
-                    f'{blocks_html(s["tree"], r)}</section>')
+                    f'{blocks_html(s["tree"], r, img_counter)}</section>')
         return f'<p class="subpage">📄 {esc(d.get("title", ""))}</p>'
     if t == "child_database":
         return f'<p class="subpage">🗂 {esc(d.get("title", ""))} (database)</p>'
@@ -693,14 +1222,22 @@ def block_html(b, r):
 
 
 def wrap_html(title, body, cfg):
-    css = HTML_CSS + (cfg.get("custom_css") or "")
-    return ('<!doctype html><html><head><meta charset="utf-8">'
-            '<meta name="viewport" content="width=device-width, initial-scale=1">'
-            f"<title>{esc(title)}</title><style>{css}</style></head><body>{body}</body></html>")
+    css  = _build_html_css(cfg) + (cfg.get("custom_css") or "")
+    # Body wrapper classes for image modes
+    body_classes = []
+    if cfg.get("maximize_images"):
+        body_classes.append("maximize-images")
+    if cfg.get("one_image_per_page"):
+        body_classes.append("one-image-per-page")
+    cls_attr = f' class="{" ".join(body_classes)}"' if body_classes else ""
+    return (f'<!doctype html><html><head><meta charset="utf-8">'
+            f'<meta name="viewport" content="width=device-width, initial-scale=1">'
+            f'<title>{esc(title)}</title><style>{css}</style></head>'
+            f'<body{cls_attr}>{body}</body></html>')
 
 
 # ----------------------------------------------------------------------
-# Markdown / Text renderers
+# Markdown / Text renderers  (unchanged logic, kept for completeness)
 # ----------------------------------------------------------------------
 def _wrap_ws(s, left, right):
     core = s.strip()
@@ -743,10 +1280,10 @@ def blocks_md(blocks, r, depth=0):
     lines, num, prev = [], 0, None
     pad = "    " * depth
     for b in blocks:
-        t = b["type"]
-        d = b.get(t) or {}
+        t    = b["type"]
+        d    = b.get(t) or {}
         kids = b.get("children", [])
-        num = num + 1 if t == "numbered_list_item" else 0
+        num  = num + 1 if t == "numbered_list_item" else 0
         text = rt_md(d.get("rich_text"), r) if isinstance(d, dict) else ""
         if t in LIST_TYPES:
             if prev in LIST_TYPES and prev != t and lines and lines[-1] != "":
@@ -778,8 +1315,9 @@ def blocks_md(blocks, r, depth=0):
             block = [pad + ("> " + ln if ln else ">") for ln in inner.split("\n")]
             after = []
         elif t == "code":
-            block = [pad + "```" + d.get("language", "")] + \
-                    [pad + ln for ln in plain(d.get("rich_text")).split("\n")] + [pad + "```"]
+            block = ([pad + "```" + d.get("language", "")] +
+                     [pad + ln for ln in plain(d.get("rich_text")).split("\n")] +
+                     [pad + "```"])
         elif t == "divider":
             block = [pad + "---"]
         elif t == "equation":
@@ -792,26 +1330,26 @@ def blocks_md(blocks, r, depth=0):
             if img:
                 block = [pad + f"![{plain(d.get('caption'))}]({r.img_src(img)})"]
         elif t in ("video", "file", "pdf", "audio"):
-            src = d.get(d.get("type")) or {}
-            url = src.get("url", "")
+            src  = d.get(d.get("type")) or {}
+            url  = src.get("url", "")
             name = plain(d.get("caption")) or d.get("name") or url.split("?")[0].rsplit("/", 1)[-1] or t
             block = [pad + (f"[{name}]({url})" if d.get("type") == "external" and r.keep_link(url) else name)]
         elif t in ("bookmark", "embed", "link_preview"):
-            url = d.get("url", "")
+            url  = d.get("url", "")
             block = [pad + (f"[{plain(d.get('caption')) or url}]({url})" if r.keep_link(url) else url)]
         elif t == "toggle":
-            block = [pad + f"<details><summary>{text}</summary>", ""] + \
-                    _trim(blocks_md(kids, r, depth)) + ["", pad + "</details>"]
+            block = ([pad + f"<details><summary>{text}</summary>", ""] +
+                     _trim(blocks_md(kids, r, depth)) + ["", pad + "</details>"])
             after = []
         elif t == "table":
             rows = [[rt_md(c, r).replace("|", "\\|").replace("\n", " ") for c in row["table_row"]["cells"]]
                     for row in kids if row["type"] == "table_row"]
             if rows:
                 width = max(len(x) for x in rows)
-                rows = [x + [""] * (width - len(x)) for x in rows]
-                block = [pad + "| " + " | ".join(rows[0]) + " |",
-                         pad + "| " + " | ".join(["---"] * width) + " |"]
-                block += [pad + "| " + " | ".join(x) + " |" for x in rows[1:]]
+                rows  = [x + [""] * (width - len(x)) for x in rows]
+                block = ([pad + "| " + " | ".join(rows[0]) + " |",
+                          pad + "| " + " | ".join(["---"] * width) + " |"] +
+                         [pad + "| " + " | ".join(x) + " |" for x in rows[1:]])
             after = []
         elif t == "column_list":
             for c in kids:
@@ -824,7 +1362,8 @@ def blocks_md(blocks, r, depth=0):
         elif t == "child_page":
             s = b.get("_sub")
             if s:
-                block = [pad + "## 📄 " + s["title"], ""] + _trim(blocks_md(s["tree"], r, depth))
+                block = ([pad + "## 📄 " + s["title"], ""] +
+                         _trim(blocks_md(s["tree"], r, depth)))
             else:
                 block = [pad + "📄 " + d.get("title", "")]
             after = []
@@ -856,10 +1395,10 @@ def blocks_txt(blocks, depth=0):
     lines, num = [], 0
     pad = "  " * depth
     for b in blocks:
-        t = b["type"]
-        d = b.get(t) or {}
+        t    = b["type"]
+        d    = b.get(t) or {}
         kids = b.get("children", [])
-        num = num + 1 if t == "numbered_list_item" else 0
+        num  = num + 1 if t == "numbered_list_item" else 0
         text = plain(d.get("rich_text")) if isinstance(d, dict) else ""
         if t == "bulleted_list_item":
             lines.append(f"{pad}• {text}")
@@ -902,41 +1441,80 @@ def blocks_txt(blocks, depth=0):
 # ----------------------------------------------------------------------
 # Word renderer
 # ----------------------------------------------------------------------
-def build_docx(title, rows, tree, r, path):
+def build_docx(title, icon_text, rows, tree, r, path, cfg):
     try:
         from docx import Document
-        from docx.shared import Inches
+        from docx.shared import Inches, Pt, RGBColor
         from docx.oxml import OxmlElement
         from docx.oxml.ns import qn
+        from docx.enum.text import WD_ALIGN_PARAGRAPH
     except ImportError:
         raise Exception("Word export needs: pip install python-docx")
 
     doc = Document()
-    doc.add_heading(title, 0)
-    if rows:
-        tb = doc.add_table(rows=0, cols=2)
-        tb.style = "Table Grid"
-        for k, v in rows:
-            cells = tb.add_row().cells
-            cells[0].text, cells[1].text = k, v
+
+    # Page icon (emoji only for Word)
+    icon_mode = cfg.get("icon_mode", ICON_MODES[0])
+    if icon_mode != "Hide icon" and icon_text:
+        p = doc.add_paragraph()
+        p.add_run(icon_text).font.size = Pt(28)
+
+    # Title
+    heading = doc.add_heading(title, 0)
+    if cfg.get("heading_align") == "Center":
+        heading.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+    # Title separator
+    if cfg.get("title_separator"):
+        p = doc.add_paragraph()
+        p.add_run("─" * 40).font.color.rgb = RGBColor(0xE3, 0xE2, 0xE0)
+
+    # Properties
+    prop_layout = cfg.get("prop_layout", "Notion Table")
+    if rows and prop_layout != "Hidden":
+        if prop_layout in ("Notion Table", "Minimalist List"):
+            tb = doc.add_table(rows=0, cols=2)
+            tb.style = "Table Grid"
+            for k, v in rows:
+                cells = tb.add_row().cells
+                cells[0].text = k
+                cells[1].text = v
+                cells[0].paragraphs[0].runs[0].font.color.rgb = RGBColor(0x78, 0x77, 0x74)
+        elif prop_layout == "Inline Pills":
+            p = doc.add_paragraph()
+            for i, (k, v) in enumerate(rows):
+                if i:
+                    p.add_run("  ")
+                run = p.add_run(f"{k}: {v}")
+                run.font.size = Pt(9)
         doc.add_paragraph()
+
+    # Cover page break
+    if cfg.get("cover_page"):
+        from docx.oxml.ns import qn as _qn
+        from docx.oxml import OxmlElement as _OE
+        p = doc.add_paragraph()
+        pPr = p._p.get_or_add_pPr()
+        pb  = _OE("w:pageBreakBefore")
+        pb.set(_qn("w:val"), "true")
+        pPr.append(pb)
 
     def hyperlink(par, text, url):
         rid = par.part.relate_to(
             url, "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink",
             is_external=True)
-        h = OxmlElement("w:hyperlink")
+        h    = OxmlElement("w:hyperlink")
         h.set(qn("r:id"), rid)
-        run = OxmlElement("w:r")
-        rpr = OxmlElement("w:rPr")
-        u = OxmlElement("w:u")
+        run  = OxmlElement("w:r")
+        rpr  = OxmlElement("w:rPr")
+        u    = OxmlElement("w:u")
         u.set(qn("w:val"), "single")
-        col = OxmlElement("w:color")
+        col  = OxmlElement("w:color")
         col.set(qn("w:val"), "0563C1")
         rpr.append(u)
         rpr.append(col)
         run.append(rpr)
-        tx = OxmlElement("w:t")
+        tx   = OxmlElement("w:t")
         tx.text = text
         run.append(tx)
         h.append(run)
@@ -952,31 +1530,35 @@ def build_docx(title, rows, tree, r, path):
                 hyperlink(par, txt, href)
                 continue
             run = par.add_run(txt)
-            a = x.get("annotations", {})
-            run.bold = True if a.get("bold") else None
-            run.italic = True if a.get("italic") else None
+            a   = x.get("annotations", {})
+            run.bold      = True if a.get("bold") else None
+            run.italic    = True if a.get("italic") else None
             run.underline = True if a.get("underline") else None
             run.font.strike = True if a.get("strikethrough") else None
             if a.get("code"):
                 run.font.name = "Consolas"
 
-    def indent(par, depth):
+    def do_indent(par, depth):
         if depth:
             par.paragraph_format.left_indent = Inches(0.3 * depth)
 
+    img_num = [0]
+
     def add(blocks, depth=0):
         for b in blocks:
-            t = b["type"]
-            d = b.get(t) or {}
+            t    = b["type"]
+            d    = b.get(t) or {}
             kids = b.get("children", [])
-            lvl = min(depth + 1, 3)
+            lvl  = min(depth + 1, 3)
             if t == "paragraph":
                 p = doc.add_paragraph()
                 runs(p, d.get("rich_text"))
-                indent(p, depth)
+                do_indent(p, depth)
             elif t in ("heading_1", "heading_2", "heading_3"):
                 p = doc.add_heading(level=int(t[-1]))
                 runs(p, d.get("rich_text"))
+                if cfg.get("heading_align") == "Center":
+                    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
             elif t == "bulleted_list_item":
                 p = doc.add_paragraph(style="List Bullet" if lvl == 1 else f"List Bullet {lvl}")
                 runs(p, d.get("rich_text"))
@@ -986,7 +1568,7 @@ def build_docx(title, rows, tree, r, path):
             elif t == "to_do":
                 p = doc.add_paragraph("☑ " if d.get("checked") else "☐ ")
                 runs(p, d.get("rich_text"))
-                indent(p, depth)
+                do_indent(p, depth)
             elif t in ("quote", "callout"):
                 p = doc.add_paragraph(style="Quote")
                 if t == "callout" and (d.get("icon") or {}).get("type") == "emoji":
@@ -997,30 +1579,45 @@ def build_docx(title, rows, tree, r, path):
                 runs(p, d.get("rich_text"))
                 for run in p.runs:
                     run.bold = True
-                indent(p, depth)
+                do_indent(p, depth)
             elif t == "code":
-                p = doc.add_paragraph()
-                run = p.add_run(plain(d.get("rich_text")))
+                p     = doc.add_paragraph()
+                run   = p.add_run(plain(d.get("rich_text")))
                 run.font.name = "Consolas"
-                indent(p, depth)
+                do_indent(p, depth)
             elif t == "divider":
-                doc.add_paragraph("―" * 20)
+                doc.add_paragraph("─" * 20)
             elif t == "equation":
                 doc.add_paragraph(d.get("expression", ""))
             elif t == "image":
                 img = b.get("_img")
+                img_num[0] += 1
                 if img and img.get("bytes"):
                     try:
                         doc.add_picture(io.BytesIO(img["bytes"]), width=Inches(5.5))
-                        cap = plain(d.get("caption"))
-                        if cap:
-                            doc.add_paragraph(cap)
+                        # Caption
+                        show_names = cfg.get("show_image_names", False)
+                        cap_text   = plain(d.get("caption"))
+                        if not cap_text and show_names:
+                            cap_text = _build_caption(cfg.get("caption_format", "{name}"),
+                                                      img, img_num[0])
+                        if cap_text:
+                            doc.add_paragraph(cap_text)
+                        # One per page
+                        if cfg.get("one_image_per_page"):
+                            from docx.oxml.ns import qn as _qn
+                            from docx.oxml import OxmlElement as _OE
+                            p2  = doc.add_paragraph()
+                            pPr = p2._p.get_or_add_pPr()
+                            pb  = _OE("w:pageBreakBefore")
+                            pb.set(_qn("w:val"), "true")
+                            pPr.append(pb)
                     except Exception:
                         doc.add_paragraph(f"[Image: {img['url']}]")
                 elif img:
                     doc.add_paragraph(f"[Image: {img['url']}]")
             elif t in ("bookmark", "embed", "link_preview"):
-                p = doc.add_paragraph()
+                p   = doc.add_paragraph()
                 url = d.get("url", "")
                 if r.keep_link(url):
                     hyperlink(p, url, url)
@@ -1033,7 +1630,7 @@ def build_docx(title, rows, tree, r, path):
                 rws = [x["table_row"]["cells"] for x in kids if x["type"] == "table_row"]
                 if rws:
                     width = max(len(x) for x in rws)
-                    tb = doc.add_table(rows=len(rws), cols=width)
+                    tb    = doc.add_table(rows=len(rws), cols=width)
                     tb.style = "Table Grid"
                     for ri, row in enumerate(rws):
                         for ci, c in enumerate(row):
@@ -1079,7 +1676,7 @@ class LoginRequired(Exception):
     pass
 
 
-BASE_CSS = """
+BASE_CSS  = """
 @media print {
   html, body, .notion-app-inner, .notion-frame, .notion-scroller,
   .notion-page-content { height: auto !important; overflow: visible !important; }
@@ -1135,27 +1732,55 @@ LINKS_JS = """(mode) => document.querySelectorAll('a[href]').forEach(a => {
   const internal = h.startsWith('/') || /^https?:\\/\\/(www\\.)?notion\\.(so|site)/.test(h);
   if (mode === 'all' || (mode === 'internal' && internal)) a.removeAttribute('href');
 })"""
-FOOTER = ('<div style="font-size:9px;width:100%;text-align:center;color:#666">'
-          '<span class="pageNumber"></span> / <span class="totalPages"></span></div>')
+
+
+def _pagenum_templates(cfg: dict):
+    """Return (header_template, footer_template) based on position/format settings."""
+    pos = cfg.get("page_num_position", PAGENUM_POS[0])
+    fmt = cfg.get("page_num_format", PAGENUM_FMT[0])
+
+    if fmt == "Page X of Y":
+        content = ('<span style="font-size:9px;color:#666">'
+                   'Page <span class="pageNumber"></span>'
+                   ' of <span class="totalPages"></span></span>')
+    else:
+        content = ('<span style="font-size:9px;color:#666">'
+                   '<span class="pageNumber"></span></span>')
+
+    align_map = {
+        "Bottom Center": "center",
+        "Bottom Right":  "right",
+        "Top Right":     "right",
+    }
+    align = align_map.get(pos, "center")
+    wrapped = f'<div style="width:100%;text-align:{align}">{content}</div>'
+
+    if pos == "Top Right":
+        return wrapped, "<span></span>"
+    return "<span></span>", wrapped
 
 
 def pdf_kwargs(cfg, path):
-    m = f"{int(cfg['margin_mm'])}mm"
+    m      = f"{int(cfg['margin_mm'])}mm"
     margin = {"top": m, "bottom": m, "left": m, "right": m}
-    kw = dict(path=path, format=cfg["page_size"],
-              landscape=(cfg["orientation"] == "Landscape"),
-              print_background=bool(cfg["print_background"]),
-              scale=max(0.1, min(2.0, float(cfg["scale"]) / 100)))
+    kw     = dict(path=path, format=cfg["page_size"],
+                  landscape=(cfg["orientation"] == "Landscape"),
+                  print_background=bool(cfg["print_background"]),
+                  scale=max(0.1, min(2.0, float(cfg["scale"]) / 100)))
     if cfg["page_numbers"]:
-        margin["bottom"] = f"{max(int(cfg['margin_mm']), 15)}mm"
-        kw.update(display_header_footer=True, header_template="<span></span>",
-                  footer_template=FOOTER)
+        pos = cfg.get("page_num_position", PAGENUM_POS[0])
+        if pos == "Top Right":
+            margin["top"] = f"{max(int(cfg['margin_mm']), 15)}mm"
+        else:
+            margin["bottom"] = f"{max(int(cfg['margin_mm']), 15)}mm"
+        hdr, ftr = _pagenum_templates(cfg)
+        kw.update(display_header_footer=True, header_template=hdr, footer_template=ftr)
     kw["margin"] = margin
     return kw
 
 
 def launch_context(pw, cfg, headless=True):
-    scheme = "light" if cfg.get("light_theme", True) else "no-preference"
+    scheme   = "light" if cfg.get("light_theme", True) else "no-preference"
     viewport = {"width": 1280, "height": 1000}
     if cfg.get("use_login", True):
         os.makedirs(PROFILE_DIR, exist_ok=True)
@@ -1173,7 +1798,7 @@ def login_to_notion(log):
     cfg["use_login"] = True
     with sync_playwright() as pw:
         _, ctx = launch_context(pw, cfg, headless=False)
-        page = ctx.pages[0] if ctx.pages else ctx.new_page()
+        page   = ctx.pages[0] if ctx.pages else ctx.new_page()
         page.goto("https://www.notion.so/login")
         log("Log in to Notion in the browser window, then close the window.")
         try:
@@ -1233,19 +1858,19 @@ class Item:
 class Exporter:
     def __init__(self, cfg, all_props=None, shown_props=None, log=print,
                  progress=lambda i, n: None, cancel=None, notion=None):
-        self.cfg = cfg
-        self.all_props = list(all_props or [])
-        self.shown_props = list(shown_props or [])
+        self.cfg        = cfg
+        self.all_props  = list(all_props or [])
+        self.shown_props= list(shown_props or [])
         self.log, self.progress = log, progress
-        self.cancel = cancel or threading.Event()
-        self.notion = notion or Client(auth=cfg["token"])
-        self.cache = {}
+        self.cancel     = cancel or threading.Event()
+        self.notion     = notion or Client(auth=cfg["token"])
+        self.cache      = {}
         self.used_paths = set()
-        self.failed = []
+        self.failed     = []
 
     # ---- sources ----
     def fetch_roots(self):
-        c = self.cfg
+        c     = self.cfg
         roots = resolve_roots(self.notion, c["database"], c["source_type"])
         roots = [p for p in roots if passes_filter(p, c["filter_prop"], c["filter_op"], c["filter_value"])]
         roots = sort_pages(roots, c["sort_by"], c["sort_desc"])
@@ -1259,8 +1884,8 @@ class Exporter:
         return it.tree
 
     def plan(self, roots):
-        c = self.cfg
-        items = []
+        c        = self.cfg
+        items    = []
         separate = c["sub_mode"] == SUB_MODES[2]
         maxdepth = int(c["sub_depth"])
 
@@ -1292,7 +1917,7 @@ class Exporter:
             items.append(it)
             expand(it)
 
-        pad = max(2, len(str(len(items))))
+        pad     = max(2, len(str(len(items))))
         counter = defaultdict(int)
         for idx, it in enumerate(items, 1):
             if it.page:
@@ -1301,12 +1926,12 @@ class Exporter:
                 f = {"title": it.title, "date": "", "created": it.created, "edited": it.edited,
                      "index": f"{idx:0{pad}d}"}
             f["parent"] = it.parent.title if it.parent else ""
-            it.fields = f
-            base = build_name(c["name_format"], f)
+            it.fields   = f
+            base        = build_name(c["name_format"], f)
             it.dirparts = (it.parent.dirparts + [it.parent.base]) if it.parent else []
-            key = (tuple(it.dirparts), base.lower())
+            key         = (tuple(it.dirparts), base.lower())
             counter[key] += 1
-            it.base = f"{base} ({counter[key]:02})" if counter[key] > 1 else base
+            it.base     = f"{base} ({counter[key]:02})" if counter[key] > 1 else base
         return items
 
     # ---- paths ----
@@ -1319,11 +1944,11 @@ class Exporter:
     def image_path(self, it, img, data):
         c = self.cfg
         f = dict(it.fields)
-        f["page"] = it.base
-        f["n"] = img["n"] if img["n"] == "cover" else f"{img['n']:02d}"
-        f["caption"] = clean_filename(img.get("caption", ""))[:60]
+        f["page"]     = it.base
+        f["n"]        = img["n"] if img["n"] == "cover" else f"{img['n']:02d}"
+        f["caption"]  = clean_filename(img.get("caption", ""))[:60]
         f["original"] = os.path.splitext(os.path.basename(unquote(urlparse(img["url"]).path)))[0]
-        name = build_name(c["img_format"], f)
+        name   = build_name(c["img_format"], f)
         folder = os.path.join(c["save_dir"], "Images")
         if c["img_subfolder"]:
             folder = os.path.join(folder, *it.dirparts, it.base)
@@ -1337,8 +1962,8 @@ class Exporter:
         return path
 
     def prepare_images(self, it):
-        c = self.cfg
-        handling = c["img_handling"]
+        c          = self.cfg
+        handling   = c["img_handling"]
         engine_api = c["engine"] == ENGINES[0]
         save_files = c["fmt_images"] or handling == IMG_MODES[1] or \
             (handling == IMG_MODES[0] and c["fmt_md"])
@@ -1348,18 +1973,18 @@ class Exporter:
             return
         imgs = []
         if c["img_cover"] and it.page and it.page.get("cover"):
-            cv = it.page["cover"]
+            cv  = it.page["cover"]
             url = (cv.get(cv.get("type")) or {}).get("url")
             if url:
                 imgs.append({"url": url, "caption": "", "n": "cover"})
         n = 0
         for b in walk(it.tree or []):
             if b["type"] == "image":
-                d = b["image"]
+                d   = b["image"]
                 url = (d.get(d.get("type")) or {}).get("url")
                 if not url:
                     continue
-                n += 1
+                n  += 1
                 img = {"url": url, "caption": plain(d.get("caption")), "n": n}
                 b["_img"] = img
                 imgs.append(img)
@@ -1380,36 +2005,61 @@ class Exporter:
     def prop_rows(self, it):
         if not it.page:
             return []
+        date_fmt = self.cfg.get("date_format_props", "YYYY-MM-DD")
         rows = []
         for k, v in it.page["properties"].items():
             if v["type"] == "title":
                 continue
             if self.all_props and k not in self.shown_props:
                 continue
-            txt = prop_to_text(v)
+            txt = prop_to_text(v, date_fmt)
             if txt:
                 rows.append((k, txt))
         return rows
 
+    def _page_icon_text(self, it) -> str:
+        """Return the emoji/icon text for docx/md/txt (empty if hidden)."""
+        mode = self.cfg.get("icon_mode", ICON_MODES[0])
+        if mode == "Hide icon":
+            return ""
+        if it.page:
+            icon = it.page.get("icon") or {}
+            if icon.get("type") == "emoji":
+                return icon["emoji"]
+        return ""
+
     def body_html(self, it, kind, base_dir):
-        r = R(self.cfg, kind, base_dir)
-        icon = ""
-        if it.page and (it.page.get("icon") or {}).get("type") == "emoji":
-            icon = it.page["icon"]["emoji"] + " "
-        h = f'<h1 class="title">{esc(icon + it.title)}</h1>'
+        r    = R(self.cfg, kind, base_dir)
+        cfg  = self.cfg
         rows = self.prop_rows(it)
-        if rows:
-            h += '<table class="props">' + "".join(
-                f"<tr><th>{esc(k)}</th><td>{esc(v)}</td></tr>" for k, v in rows) + "</table>"
-        return h + blocks_html(it.tree or [], r)
+        layout = cfg.get("prop_layout", "Notion Table")
+
+        # Page icon HTML
+        icon_html = _page_icon_html(it.page, cfg)
+
+        # Title
+        sep_cls  = ""
+        h = f'{icon_html}<h1 class="notion-title{sep_cls}">{esc(it.title)}</h1>'
+
+        # Properties HTML
+        h += props_html(rows, layout, cfg)
+
+        # Cover page wrapper
+        body_html = blocks_html(it.tree or [], r)
+        if cfg.get("cover_page"):
+            cover = f'<div class="notion-cover-page">{h}</div><div class="notion-page-break"></div>'
+            return cover + body_html
+        return h + body_html
 
     def text_md(self, it, base_dir):
-        r = R(self.cfg, "md", base_dir)
+        r    = R(self.cfg, "md", base_dir)
         body = "\n".join(blocks_md(it.tree or [], r))
-        return md_front_matter(it.title, self.prop_rows(it)) + f"\n\n# {it.title}\n\n" + body + "\n"
+        icon = self._page_icon_text(it)
+        prefix = f"{icon} " if icon else ""
+        return md_front_matter(it.title, self.prop_rows(it)) + f"\n\n# {prefix}{it.title}\n\n" + body + "\n"
 
     def text_txt(self, it):
-        lines = [it.title, "=" * len(it.title), ""]
+        lines  = [it.title, "=" * len(it.title), ""]
         lines += [f"{k}: {v}" for k, v in self.prop_rows(it)]
         if len(lines) > 3:
             lines.append("")
@@ -1432,7 +2082,7 @@ class Exporter:
 
     def pdf_api(self, page, it, path, tmp):
         html = wrap_html(it.title, self.body_html(it, "pdf", None), self.cfg)
-        hp = os.path.join(tmp, f"{abs(hash(it.id))}.html")
+        hp   = os.path.join(tmp, f"{abs(hash(it.id))}.html")
         with open(hp, "w", encoding="utf-8") as f:
             f.write(html)
         page.goto(Path(hp).resolve().as_uri(), wait_until="load")
@@ -1441,7 +2091,7 @@ class Exporter:
 
     # ---- main ----
     def run(self, selected_roots=None):
-        c = self.cfg
+        c       = self.cfg
         formats = [f for f in FORMATS if c["fmt_" + f]]
         if not formats and not c["fmt_images"]:
             raise Exception("Pick at least one export format.")
@@ -1449,9 +2099,9 @@ class Exporter:
             raise Exception("Choose an output folder.")
         use_api_pdf = c["engine"] == ENGINES[0]
         doc_formats = [f for f in formats if f != "pdf"]
-        need_tree = bool(doc_formats) or c["fmt_images"] or c["sub_mode"] != SUB_MODES[0] \
+        need_tree   = bool(doc_formats) or c["fmt_images"] or c["sub_mode"] != SUB_MODES[0] \
             or ("pdf" in formats and use_api_pdf)
-        inline = c["sub_mode"] == SUB_MODES[1]
+        inline      = c["sub_mode"] == SUB_MODES[1]
 
         self.log("Reading pages...")
         roots = selected_roots or self.fetch_roots()
@@ -1462,19 +2112,19 @@ class Exporter:
         self.log(f"Exporting {total} page(s) to: " +
                  ", ".join(FORMAT_LABELS[f] for f in formats + (["images"] if c["fmt_images"] else [])))
 
-        hide_names = [n for n in self.all_props if n not in self.shown_props] if self.all_props else []
+        hide_names   = [n for n in self.all_props if n not in self.shown_props] if self.all_props else []
         made_pdfs, combined_html, combined_md = [], [], []
         tmp = tempfile.mkdtemp(prefix="notion_export_")
         pw = browser = ctx = page = None
         try:
             if "pdf" in formats:
-                pw = sync_playwright().start()
-                pcfg = dict(c, use_login=bool(c["use_login"]) and not use_api_pdf)
-                browser, ctx = launch_context(pw, pcfg)
-                page = ctx.new_page()
+                pw             = sync_playwright().start()
+                pcfg           = dict(c, use_login=bool(c["use_login"]) and not use_api_pdf)
+                browser, ctx   = launch_context(pw, pcfg)
+                page           = ctx.new_page()
 
             html_root = os.path.join(c["save_dir"], FOLDERS["html"])
-            md_root = os.path.join(c["save_dir"], FOLDERS["md"])
+            md_root   = os.path.join(c["save_dir"], FOLDERS["md"])
 
             for i, it in enumerate(items, 1):
                 if self.cancel.is_set():
@@ -1511,8 +2161,9 @@ class Exporter:
                                 with open(path, "w", encoding="utf-8") as f:
                                     f.write(self.text_txt(it))
                             elif fmt == "docx":
-                                build_docx(it.title, self.prop_rows(it), it.tree or [],
-                                           R(c, "docx"), path)
+                                icon_text = self._page_icon_text(it)
+                                build_docx(it.title, icon_text, self.prop_rows(it),
+                                           it.tree or [], R(c, "docx"), path, c)
                             elif fmt == "json":
                                 data = {"id": it.id, "title": it.title,
                                         "properties": (it.page or {}).get("properties", {}),
@@ -1524,7 +2175,8 @@ class Exporter:
                         except Exception as e:
                             if "login" in str(e).lower() and fmt == "pdf":
                                 raise
-                            self.failed.append((f"{it.label} [{fmt}]", str(e).splitlines()[0][:100] if str(e) else "error"))
+                            self.failed.append((f"{it.label} [{fmt}]",
+                                                str(e).splitlines()[0][:100] if str(e) else "error"))
                             self.log(f"FAILED {fmt}: {it.label}")
                     if c["combine"]:
                         if c["fmt_html"]:
@@ -1556,12 +2208,12 @@ class Exporter:
 
         name = clean_filename(c["merged_name"]) or "All_Pages"
         if combined_html:
-            toc = "".join(f'<li><a href="#p{n}">{esc(it.title)}</a></li>'
-                          for n, (it, _) in enumerate(combined_html))
+            toc  = "".join(f'<li><a href="#p{n}">{esc(it.title)}</a></li>'
+                           for n, (it, _) in enumerate(combined_html))
             secs = "".join(f'<section class="page" id="p{n}">{b}</section>'
                            for n, (_, b) in enumerate(combined_html))
             with open(os.path.join(html_root, name + ".html"), "w", encoding="utf-8") as f:
-                f.write(wrap_html(name, f"<h1 class='title'>{esc(name)}</h1><ol>{toc}</ol>{secs}", c))
+                f.write(wrap_html(name, f"<h1 class='notion-title'>{esc(name)}</h1><ol>{toc}</ol>{secs}", c))
         if combined_md:
             with open(os.path.join(md_root, name + ".md"), "w", encoding="utf-8") as f:
                 f.write("\n\n---\n\n".join(combined_md))
@@ -1598,8 +2250,13 @@ class App:
     def __init__(self):
         self.cfg0 = load_config()
         self.root = tk.Tk()
-        self.root.title("Notion Exporter")
-        self.root.geometry("760x900")
+        self.root.title("PageOut for Notion")
+        self.root.geometry("800x960")
+        self.root.resizable(True, True)
+
+        # Apply custom icon (removes default Tkinter feather)
+        apply_icon(self.root)
+
         self.V = {}
         for key, default in DEFAULTS.items():
             if key == "custom_css":
@@ -1614,7 +2271,7 @@ class App:
             else:
                 self.V[key] = tk.StringVar(value=str(val))
         self.loaded_props, self.loaded_pages, self.loaded_source = [], [], ""
-        self.q = queue.Queue()
+        self.q      = queue.Queue()
         self.cancel = threading.Event()
         self.build()
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
@@ -1624,7 +2281,7 @@ class App:
     def collect(self):
         c = {k: v.get() for k, v in self.V.items()}
         c["custom_css"] = self.css_text.get("1.0", "end").strip()
-        c["token"] = c["token"].strip()
+        c["token"]      = c["token"].strip()
         return c
 
     def log(self, msg):
@@ -1661,9 +2318,9 @@ class App:
             return False
         return True
 
-    def row(self, parent, r, label, widget):
-        ttk.Label(parent, text=label).grid(row=r, column=0, sticky="ne", padx=8, pady=4)
-        widget.grid(row=r, column=1, sticky="we", padx=8, pady=4)
+    def row(self, parent, r, label, widget, pady=4):
+        ttk.Label(parent, text=label).grid(row=r, column=0, sticky="ne", padx=8, pady=pady)
+        widget.grid(row=r, column=1, sticky="we", padx=8, pady=pady)
         parent.columnconfigure(1, weight=1)
 
     def tab(self, title):
@@ -1677,6 +2334,13 @@ class App:
 
     def check(self, parent, key, text):
         return ttk.Checkbutton(parent, text=text, variable=self.V[key])
+
+    def section(self, parent, row, text):
+        """Small section header label."""
+        ttk.Separator(parent, orient="horizontal").grid(
+            row=row, column=0, columnspan=2, sticky="we", padx=8, pady=(10, 2))
+        ttk.Label(parent, text=text, font=("", 9, "bold"), foreground="#555").grid(
+            row=row + 1, column=0, columnspan=2, sticky="w", padx=8, pady=(0, 2))
 
     # ---- actions ----
     def poll(self):
@@ -1723,9 +2387,9 @@ class App:
             messagebox.showerror("Missing folder", "Choose an output folder on the Output tab.")
             return
         save_config(c)
-        shown = [self.props_list.get(i) for i in self.props_list.curselection()]
+        shown    = [self.props_list.get(i) for i in self.props_list.curselection()]
         selected = None
-        sel = self.pages_list.curselection()
+        sel      = self.pages_list.curselection()
         if sel and self.loaded_source == c["database"].strip():
             selected = [self.loaded_pages[i] for i in sel]
         self.cancel.clear()
@@ -1734,7 +2398,7 @@ class App:
 
         def worker():
             try:
-                ex = Exporter(c, self.loaded_props, shown, self.log, self.progress, self.cancel)
+                ex       = Exporter(c, self.loaded_props, shown, self.log, self.progress, self.cancel)
                 out, count, failed = ex.run(selected)
                 self.q.put(("done", out, count, failed))
             except Cancelled:
@@ -1792,7 +2456,7 @@ class App:
         try:
             self.root.config(cursor="watch")
             self.root.update_idletasks()
-            ex = Exporter(c)
+            ex    = Exporter(c)
             pages = ex.fetch_roots()
         except Exception as e:
             messagebox.showerror("Could not load pages", str(e))
@@ -1814,12 +2478,12 @@ class App:
                 return
             self.root.config(cursor="watch")
             self.root.update_idletasks()
-            ex = Exporter(c)
+            ex    = Exporter(c)
             pages = ex.fetch_roots()[:8]
             names = [build_name(c["name_format"], page_fields(p, i, 2)) for i, p in enumerate(pages, 1)]
-            img = [build_name(c["img_format"], dict(page_fields(p, i, 2), page=n, n="01",
-                                                    caption="caption", original="image"))
-                   for i, (p, n) in enumerate(zip(pages, names), 1)][:3]
+            img   = [build_name(c["img_format"], dict(page_fields(p, i, 2), page=n, n="01",
+                                                      caption="caption", original="image"))
+                     for i, (p, n) in enumerate(zip(pages, names), 1)][:3]
             messagebox.showinfo("Name preview", "Files:\n" + "\n".join(names) +
                                 "\n\nImages:\n" + "\n".join(x + ".png" for x in img))
         except Exception as e:
@@ -1831,6 +2495,14 @@ class App:
         d = filedialog.askdirectory(title="Choose output folder")
         if d:
             self.V["save_dir"].set(d)
+
+    def choose_icon_file(self):
+        p = filedialog.askopenfilename(
+            title="Choose custom icon image",
+            filetypes=[("Images", "*.png *.jpg *.jpeg *.gif *.webp *.svg"),
+                       ("All files", "*.*")])
+        if p:
+            self.V["icon_custom_file"].set(p)
 
     def select_pages(self, all_):
         if all_:
@@ -1847,11 +2519,13 @@ class App:
 
     # ---- layout ----
     def build(self):
-        V = self.V
+        V       = self.V
         self.nb = ttk.Notebook(self.root)
         self.nb.pack(fill="both", expand=True, padx=10, pady=(10, 4))
 
-        # Source
+        # ══════════════════════════════════════════════════════════
+        # Tab: Source
+        # ══════════════════════════════════════════════════════════
         t = self.tab("Source")
         self.token_entry = ttk.Entry(t, textvariable=V["token"], show="•")
         self.row(t, 0, "Notion token", self.token_entry)
@@ -1871,7 +2545,8 @@ class App:
         self.login_btn = ttk.Button(lr, text="Log in to Notion", command=self.do_login)
         self.login_btn.pack(side="left", padx=10)
         self.row(t, 5, "Browser", lr)
-        ttk.Button(t, text="Load properties", command=self.load_props).grid(row=6, column=1, sticky="w", padx=8, pady=6)
+        ttk.Button(t, text="Load properties", command=self.load_props).grid(
+            row=6, column=1, sticky="w", padx=8, pady=6)
         lf = ttk.Frame(t)
         self.props_list = tk.Listbox(lf, selectmode=tk.MULTIPLE, exportselection=False, height=9)
         sb = ttk.Scrollbar(lf, command=self.props_list.yview)
@@ -1880,7 +2555,9 @@ class App:
         sb.pack(side="right", fill="y")
         self.row(t, 7, "Properties to show\n(none loaded = all)", lf)
 
-        # Pages
+        # ══════════════════════════════════════════════════════════
+        # Tab: Pages
+        # ══════════════════════════════════════════════════════════
         t = self.tab("Pages")
         self.row(t, 0, "File name format", ttk.Entry(t, textvariable=V["name_format"]))
         pre = ttk.Combobox(t, values=NAME_PRESETS, state="readonly")
@@ -1891,7 +2568,8 @@ class App:
                                        "Formats: {date:%d-%m-%Y}   {title:40} (truncate)")
         ttk.Label(t, textvariable=self.hint, foreground="#666", wraplength=560, justify="left").grid(
             row=2, column=1, sticky="w", padx=8)
-        ttk.Button(t, text="Preview names", command=self.preview_names).grid(row=3, column=1, sticky="w", padx=8, pady=4)
+        ttk.Button(t, text="Preview names", command=self.preview_names).grid(
+            row=3, column=1, sticky="w", padx=8, pady=4)
         sr = ttk.Frame(t)
         self.sort_combo = ttk.Combobox(sr, textvariable=V["sort_by"], values=SORT_BUILTIN, width=22)
         self.sort_combo.pack(side="left")
@@ -1904,7 +2582,8 @@ class App:
                      state="readonly", width=15).pack(side="left", padx=4)
         ttk.Entry(fr, textvariable=V["filter_value"], width=18).pack(side="left")
         self.row(t, 5, "Only pages where", fr)
-        self.row(t, 6, "Max pages (0 = all)", ttk.Spinbox(t, from_=0, to=100000, textvariable=V["max_pages"], width=8))
+        self.row(t, 6, "Max pages (0 = all)",
+                 ttk.Spinbox(t, from_=0, to=100000, textvariable=V["max_pages"], width=8))
         pr = ttk.Frame(t)
         ttk.Button(pr, text="Load pages", command=self.load_pages).pack(side="left")
         ttk.Button(pr, text="Select all", command=lambda: self.select_pages(True)).pack(side="left", padx=4)
@@ -1918,18 +2597,21 @@ class App:
         sb2.pack(side="right", fill="y")
         self.row(t, 8, "(none selected = all)", pf)
 
-        # Formats
-        t = self.tab("Formats")
+        # ══════════════════════════════════════════════════════════
+        # Tab: Formats
+        # ══════════════════════════════════════════════════════════
+        t  = self.tab("Formats")
         ff = ttk.Frame(t)
         for k in FORMATS + ["images"]:
             self.check(ff, "fmt_" + k, FORMAT_LABELS[k]).pack(side="left", padx=4)
         self.row(t, 0, "Export as", ff)
         self.row(t, 1, "PDF engine", self.combo(t, "engine", ENGINES))
-        ttk.Label(t, text="API: built from page data; no login, hides properties exactly, works for all "
-                          "formats.\nBrowser: prints the real Notion page (needs login for private pages).",
+        ttk.Label(t, text="API: built from page data; no login, hides properties exactly, works for all formats.\n"
+                           "Browser: prints the real Notion page (needs login for private pages).",
                   foreground="#666", justify="left").grid(row=2, column=1, sticky="w", padx=8)
         self.row(t, 3, "Sub-pages", self.combo(t, "sub_mode", SUB_MODES))
-        self.row(t, 4, "Sub-page depth", ttk.Spinbox(t, from_=1, to=10, textvariable=V["sub_depth"], width=8))
+        self.row(t, 4, "Sub-page depth",
+                 ttk.Spinbox(t, from_=1, to=10, textvariable=V["sub_depth"], width=8))
         self.check(t, "sub_dbs", "Separate files: also export rows of databases inside pages").grid(
             row=5, column=1, sticky="w", padx=8, pady=3)
         self.check(t, "combine", "Also create one combined HTML / Markdown file").grid(
@@ -1937,73 +2619,177 @@ class App:
         ttk.Label(t, text="Inline sub-pages need the API engine or non-PDF formats.",
                   foreground="#666").grid(row=7, column=1, sticky="w", padx=8)
 
-        # Images
+        # ══════════════════════════════════════════════════════════
+        # Tab: Images
+        # ══════════════════════════════════════════════════════════
         t = self.tab("Images")
         self.row(t, 0, "Images in documents", self.combo(t, "img_handling", IMG_MODES))
         ttk.Label(t, text="Notion image links expire after about an hour, so 'Embed' or 'Save locally' is safer.",
-                  foreground="#666", wraplength=520, justify="left").grid(row=1, column=1, sticky="w", padx=8)
+                  foreground="#666", wraplength=520, justify="left").grid(
+            row=1, column=1, sticky="w", padx=8)
         self.row(t, 2, "Image name format", ttk.Entry(t, textvariable=V["img_format"]))
         ip = ttk.Combobox(t, values=IMG_PRESETS, state="readonly")
         ip.bind("<<ComboboxSelected>>", lambda e: V["img_format"].set(ip.get()))
         self.row(t, 3, "Presets", ip)
         ttk.Label(t, text="Placeholders: {page} {title} {n} {caption} {original} {date} {index} {parent} "
-                          "+ any property.\nTick 'Images' on the Formats tab to export image files.",
-                  foreground="#666", wraplength=520, justify="left").grid(row=4, column=1, sticky="w", padx=8)
+                           "+ any property.\nTick 'Images' on the Formats tab to export image files.",
+                  foreground="#666", wraplength=520, justify="left").grid(
+            row=4, column=1, sticky="w", padx=8)
         self.check(t, "img_subfolder", "Put each page's images in its own folder").grid(
             row=5, column=1, sticky="w", padx=8, pady=3)
         self.check(t, "img_cover", "Include page cover images ({n} = cover)").grid(
             row=6, column=1, sticky="w", padx=8, pady=3)
 
-        # Content
+        # ── Image layout section ──
+        self.section(t, 7, "Image Layout (PDF / HTML / Word)")
+        self.check(t, "maximize_images",
+                   "Maximize images when page contains only images").grid(
+            row=9, column=1, sticky="w", padx=8, pady=2)
+        self.check(t, "one_image_per_page",
+                   "One image per page (insert page break after each image)").grid(
+            row=10, column=1, sticky="w", padx=8, pady=2)
+        self.check(t, "show_image_names",
+                   "Display image filenames below images (when no Notion caption)").grid(
+            row=11, column=1, sticky="w", padx=8, pady=2)
+        cf_row = ttk.Frame(t)
+        cap_combo = ttk.Combobox(cf_row, textvariable=V["caption_format"],
+                                 values=CAPTION_FMTS, width=28)
+        cap_combo.pack(side="left")
+        ttk.Label(cf_row, text="  {name} {ext} {n} {original} {caption}",
+                  foreground="#888").pack(side="left")
+        self.row(t, 12, "Caption format", cf_row)
+
+        # ══════════════════════════════════════════════════════════
+        # Tab: Styling  (NEW)
+        # ══════════════════════════════════════════════════════════
+        t = self.tab("Styling")
+
+        # ── Typography ──
+        ttk.Label(t, text="Typography", font=("", 9, "bold"), foreground="#444").grid(
+            row=0, column=0, columnspan=2, sticky="w", padx=8, pady=(8, 2))
+        self.row(t, 1, "Font family", self.combo(t, "font_family", FONT_FAMILIES))
+        self.row(t, 2, "Base font size (px)",
+                 ttk.Spinbox(t, from_=10, to=28, textvariable=V["base_font_size"], width=8))
+        self.row(t, 3, "Line spacing",
+                 ttk.Spinbox(t, from_=1.0, to=3.0, increment=0.1,
+                             textvariable=V["line_spacing"], width=8))
+        self.row(t, 4, "Text alignment", self.combo(t, "text_align", TEXT_ALIGNS))
+
+        # ── Headings ──
+        self.section(t, 5, "Page Heading")
+        self.row(t, 7, "Heading alignment", self.combo(t, "heading_align", HEAD_ALIGNS))
+        self.check(t, "title_separator",
+                   "Show separator line under page title").grid(
+            row=8, column=1, sticky="w", padx=8, pady=2)
+
+        # ── Page Icon ──
+        self.section(t, 9, "Page Icon / Emoji")
+        self.row(t, 11, "Icon mode", self.combo(t, "icon_mode", ICON_MODES))
+        icon_row = ttk.Frame(t)
+        ttk.Entry(icon_row, textvariable=V["icon_custom_file"], width=36).pack(side="left")
+        ttk.Button(icon_row, text="Browse…", command=self.choose_icon_file).pack(side="left", padx=4)
+        self.row(t, 12, "Custom icon file", icon_row)
+        ttk.Label(t, text="Custom file is used when 'Custom icon file' mode is selected.",
+                  foreground="#888").grid(row=13, column=1, sticky="w", padx=8)
+
+        # ── Cover page ──
+        self.section(t, 14, "Cover / Header Page")
+        self.check(t, "cover_page",
+                   "Create dedicated cover/header page (title + icon + properties only on page 1)").grid(
+            row=16, column=1, sticky="w", padx=8, pady=2)
+
+        # ══════════════════════════════════════════════════════════
+        # Tab: Properties  (NEW)
+        # ══════════════════════════════════════════════════════════
+        t = self.tab("Properties")
+        ttk.Label(t, text="Property Display", font=("", 9, "bold"), foreground="#444").grid(
+            row=0, column=0, columnspan=2, sticky="w", padx=8, pady=(8, 2))
+        self.row(t, 1, "Layout style", self.combo(t, "prop_layout", PROP_LAYOUTS))
+        ttk.Label(t, text="Notion Table – clean two-column grid under the title\n"
+                           "Inline Pills – compact horizontal tags/badges\n"
+                           "Minimalist List – subtle key/value lines\n"
+                           "Hidden – exclude properties from body",
+                  foreground="#666", justify="left").grid(row=2, column=1, sticky="w", padx=8)
+
+        self.section(t, 3, "Date Formatting")
+        self.row(t, 5, "Property date format",
+                 self.combo(t, "date_format_props", DATE_PRESETS, state="normal"))
+        ttk.Label(t, text="Presets: YYYY-MM-DD, DD/MM/YYYY, MMM DD YYYY, Relative…\n"
+                           "Or enter any strftime pattern, e.g. %d.%m.%Y",
+                  foreground="#666", justify="left").grid(row=6, column=1, sticky="w", padx=8)
+
+        # ══════════════════════════════════════════════════════════
+        # Tab: Content
+        # ══════════════════════════════════════════════════════════
         t = self.tab("Content")
-        self.check(t, "expand_toggles", "Expand all toggles").grid(row=0, column=1, sticky="w", padx=8, pady=3)
-        self.check(t, "light_theme", "Force light theme (Browser engine)").grid(row=1, column=1, sticky="w", padx=8, pady=3)
+        self.check(t, "expand_toggles", "Expand all toggles").grid(
+            row=0, column=1, sticky="w", padx=8, pady=3)
+        self.check(t, "light_theme", "Force light theme (Browser engine)").grid(
+            row=1, column=1, sticky="w", padx=8, pady=3)
         self.check(t, "clean_layout", "Hide Notion sidebar / top bar (Browser engine)").grid(
             row=2, column=1, sticky="w", padx=8, pady=3)
         self.row(t, 3, "Links", self.combo(t, "links", LINK_MODES))
         self.css_text = tk.Text(t, height=8, width=50)
         self.css_text.insert("1.0", self.cfg0.get("custom_css", ""))
         self.row(t, 4, "Custom CSS\n(optional)", self.css_text)
-        ttk.Label(t, text="Applies to HTML / PDF output. Example: h1 { color: #c00; }",
+        ttk.Label(t, text="Applies to HTML / API-PDF output. Example: h1 { color: #c00; }",
                   foreground="#666").grid(row=5, column=1, sticky="w", padx=8)
 
-        # PDF
+        # ══════════════════════════════════════════════════════════
+        # Tab: PDF
+        # ══════════════════════════════════════════════════════════
         t = self.tab("PDF")
         self.row(t, 0, "Page size", self.combo(t, "page_size", PAGE_SIZES))
         self.row(t, 1, "Orientation", self.combo(t, "orientation", ["Portrait", "Landscape"]))
-        self.row(t, 2, "Margin (mm)", ttk.Spinbox(t, from_=0, to=50, textvariable=V["margin_mm"], width=8))
-        self.row(t, 3, "Scale (%)", ttk.Spinbox(t, from_=10, to=200, textvariable=V["scale"], width=8))
-        self.check(t, "print_background", "Print background colors").grid(row=4, column=1, sticky="w", padx=8, pady=3)
-        self.check(t, "page_numbers", "Add page numbers").grid(row=5, column=1, sticky="w", padx=8, pady=3)
+        self.row(t, 2, "Margin (mm)",
+                 ttk.Spinbox(t, from_=0, to=50, textvariable=V["margin_mm"], width=8))
+        self.row(t, 3, "Scale (%)",
+                 ttk.Spinbox(t, from_=10, to=200, textvariable=V["scale"], width=8))
+        self.check(t, "print_background", "Print background colors").grid(
+            row=4, column=1, sticky="w", padx=8, pady=3)
+        self.check(t, "page_numbers", "Add page numbers").grid(
+            row=5, column=1, sticky="w", padx=8, pady=3)
+        self.row(t, 6, "Page number position",
+                 self.combo(t, "page_num_position", PAGENUM_POS))
+        self.row(t, 7, "Page number format",
+                 self.combo(t, "page_num_format", PAGENUM_FMT))
 
-        # Output
-        t = self.tab("Output")
+        # ══════════════════════════════════════════════════════════
+        # Tab: Output
+        # ══════════════════════════════════════════════════════════
+        t    = self.tab("Output")
         orow = ttk.Frame(t)
         ttk.Entry(orow, textvariable=V["save_dir"]).pack(side="left", fill="x", expand=True)
         ttk.Button(orow, text="Browse", command=self.choose_folder).pack(side="left", padx=4)
         self.row(t, 0, "Output folder", orow)
         self.row(t, 1, "PDF output", self.combo(t, "output_mode", OUTPUT_MODES))
         self.row(t, 2, "Merged file name", ttk.Entry(t, textvariable=V["merged_name"]))
-        self.check(t, "bookmarks", "Add bookmarks to the merged PDF").grid(row=3, column=1, sticky="w", padx=8, pady=3)
-        self.check(t, "skip_existing", "Skip files already exported (resume)").grid(row=4, column=1, sticky="w", padx=8, pady=3)
+        self.check(t, "bookmarks", "Add bookmarks to the merged PDF").grid(
+            row=3, column=1, sticky="w", padx=8, pady=3)
+        self.check(t, "skip_existing", "Skip files already exported (resume)").grid(
+            row=4, column=1, sticky="w", padx=8, pady=3)
         self.row(t, 5, "Extra wait per page (s)\n(Browser engine)",
                  ttk.Spinbox(t, from_=0, to=60, increment=0.5, textvariable=V["extra_wait"], width=8))
-        self.row(t, 6, "Retries on failure", ttk.Spinbox(t, from_=0, to=5, textvariable=V["retries"], width=8))
+        self.row(t, 6, "Retries on failure",
+                 ttk.Spinbox(t, from_=0, to=5, textvariable=V["retries"], width=8))
 
-        # Run area
+        # ══════════════════════════════════════════════════════════
+        # Run area (bottom bar)
+        # ══════════════════════════════════════════════════════════
         run = ttk.Frame(self.root)
         run.pack(fill="x", padx=10, pady=4)
-        self.export_btn = ttk.Button(run, text="Export", command=self.start_export)
+        self.export_btn = ttk.Button(run, text="▶  Export", command=self.start_export)
         self.export_btn.pack(side="left")
-        self.cancel_btn = ttk.Button(run, text="Cancel", command=self.cancel_export, state="disabled")
+        self.cancel_btn = ttk.Button(run, text="✕  Cancel", command=self.cancel_export,
+                                     state="disabled")
         self.cancel_btn.pack(side="left", padx=6)
         self.status = tk.StringVar()
         ttk.Label(run, textvariable=self.status).pack(side="right")
         self.bar = ttk.Progressbar(self.root, mode="determinate")
         self.bar.pack(fill="x", padx=10, pady=2)
-        self.log_box = tk.Text(self.root, height=8, state="disabled", bg="#f7f7f7")
+        self.log_box = tk.Text(self.root, height=8, state="disabled", bg="#f7f7f7",
+                               relief="flat", borderwidth=1)
         self.log_box.pack(fill="x", padx=10, pady=4)
-
 
     def run(self):
         self.root.mainloop()

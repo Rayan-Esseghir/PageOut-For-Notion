@@ -2,3 +2,4 @@ notion-client
 playwright
 pypdf
 python-docx
+pillow
