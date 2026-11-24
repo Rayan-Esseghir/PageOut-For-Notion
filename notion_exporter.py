@@ -1,5 +1,5 @@
 """
-Notion Exporter (v5)  –  PageOut for Notion
+PageOut for Notion  –  1.0.0-beta.1  (BETA)
 
 Install:
     pip install notion-client playwright pypdf python-docx pillow google-genai
@@ -37,6 +37,7 @@ import webbrowser
 import mimetypes
 import html as _html
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlparse, unquote, quote
@@ -52,7 +53,8 @@ except ImportError:
 
 try:
     import tkinter as tk
-    from tkinter import messagebox, filedialog, ttk
+    from tkinter import messagebox, filedialog, ttk, colorchooser
+    import tkinter.font as tkfont
 except ImportError:                                   # headless use / tests
     tk = None
 
@@ -78,7 +80,9 @@ def _resource_dir() -> Path:
 
 RESOURCE_DIR = _resource_dir()
 APP_NAME     = "PageOut for Notion"
-APP_VERSION  = "5.1"
+APP_VERSION  = "1.0.0-beta.1"
+APP_STAGE    = "BETA"
+CONFIG_VERSION = 2
 
 
 def _setup_portable_browsers():
@@ -151,6 +155,57 @@ NAME_PRESETS = ["{date} - {title}", "{title}", "{index} - {title}",
 IMG_PRESETS  = ["{page}_{n}", "{title} - {n}", "{date} - {title} - {n}",
                 "{page}_{n} - {caption}", "{original}"]
 
+LATEX_IMAGES_AS_COMMENTS = True     # images in .tex become "% [Image ...]" comments (for now)
+
+# (name, category, is_google_font)   category: sans | serif | mono | arabic
+FONT_CATALOG = [
+    ("Segoe UI", "sans", False), ("Arial", "sans", False), ("Calibri", "sans", False),
+    ("Verdana", "sans", False), ("Tahoma", "sans", False), ("Trebuchet MS", "sans", False),
+    ("Century Gothic", "sans", False),
+    ("Inter", "sans", True), ("Roboto", "sans", True), ("Open Sans", "sans", True),
+    ("Lato", "sans", True), ("Poppins", "sans", True), ("Nunito", "sans", True),
+    ("Montserrat", "sans", True), ("Source Sans 3", "sans", True), ("IBM Plex Sans", "sans", True),
+    ("Georgia", "serif", False), ("Times New Roman", "serif", False), ("Cambria", "serif", False),
+    ("Palatino Linotype", "serif", False), ("Garamond", "serif", False), ("Book Antiqua", "serif", False),
+    ("Merriweather", "serif", True), ("Lora", "serif", True), ("Playfair Display", "serif", True),
+    ("Source Serif 4", "serif", True), ("Crimson Pro", "serif", True), ("EB Garamond", "serif", True),
+    ("Libre Baskerville", "serif", True),
+    ("Consolas", "mono", False), ("Cascadia Code", "mono", False), ("Courier New", "mono", False),
+    ("Fira Code", "mono", True), ("JetBrains Mono", "mono", True), ("Source Code Pro", "mono", True),
+    ("IBM Plex Mono", "mono", True),
+    ("Cairo", "arabic", True), ("Tajawal", "arabic", True), ("Amiri", "arabic", True),
+    ("Noto Naskh Arabic", "arabic", True), ("Noto Sans Arabic", "arabic", True),
+    ("IBM Plex Sans Arabic", "arabic", True), ("Almarai", "arabic", True),
+    ("Scheherazade New", "arabic", True),
+]
+FONT_CATEGORY = {n: c for n, c, _ in FONT_CATALOG}
+GOOGLE_FONTS  = {n for n, _, g in FONT_CATALOG if g}
+SAME_AS_BODY  = "Same as body"
+
+STYLE_PRESETS = {
+    "Notion Classic": dict(font_family="Sans-serif", heading_font=SAME_AS_BODY, base_font_size=16,
+                           line_spacing=1.5, text_align="Left", heading_align="Left",
+                           title_separator=False, accent_color="#37352f", web_fonts=False),
+    "Modern Blue":    dict(font_family="Inter", heading_font=SAME_AS_BODY, base_font_size=16,
+                           line_spacing=1.65, text_align="Left", heading_align="Left",
+                           title_separator=True, accent_color="#2563eb", web_fonts=True),
+    "Academic Serif": dict(font_family="Cambria", heading_font=SAME_AS_BODY, base_font_size=15,
+                           line_spacing=1.7, text_align="Justify", heading_align="Left",
+                           title_separator=True, accent_color="#1f2937", web_fonts=False),
+    "Elegant":        dict(font_family="Lora", heading_font="Playfair Display", base_font_size=16,
+                           line_spacing=1.7, text_align="Left", heading_align="Left",
+                           title_separator=True, accent_color="#9a3412", web_fonts=True),
+    "Clean Report":   dict(font_family="Calibri", heading_font=SAME_AS_BODY, base_font_size=15,
+                           line_spacing=1.55, text_align="Left", heading_align="Center",
+                           title_separator=True, accent_color="#0f766e", web_fonts=False),
+    "Developer Mono": dict(font_family="Consolas", heading_font=SAME_AS_BODY, base_font_size=14,
+                           line_spacing=1.6, text_align="Left", heading_align="Left",
+                           title_separator=False, accent_color="#374151", web_fonts=False),
+    "Arabic (Cairo)": dict(font_family="Cairo", heading_font=SAME_AS_BODY, base_font_size=16,
+                           line_spacing=1.85, text_align="Left", heading_align="Left",
+                           title_separator=True, accent_color="#0f766e", web_fonts=True),
+}
+
 FORMATS      = ["pdf", "html", "md", "txt", "docx", "json", "tex"]
 FORMAT_LABELS= {"pdf": "PDF", "html": "HTML", "md": "Markdown", "txt": "Text",
                 "docx": "Word", "json": "JSON", "tex": "LaTeX (.tex)", "images": "Images"}
@@ -192,7 +247,7 @@ DEFAULTS = {
     "expand_toggles": True, "light_theme": True, "clean_layout": True,
     "links": LINK_MODES[0], "custom_css": "",
     # pdf
-    "page_size": "A4", "orientation": "Portrait", "margin_mm": 10, "scale": 100,
+    "page_size": "A4", "orientation": "Portrait", "margin_mm": 20, "scale": 100,
     "print_background": True, "page_numbers": False,
     "page_num_position": PAGENUM_POS[0], "page_num_format": PAGENUM_FMT[0],
     # output
@@ -201,7 +256,8 @@ DEFAULTS = {
     # styling (new)
     "font_family": FONT_FAMILIES[0],
     "base_font_size": 16,
-    "line_spacing": 1.6,
+    "line_spacing": 1.5,
+    "remove_blank_pages": True,
     "text_align": TEXT_ALIGNS[0],
     "heading_align": HEAD_ALIGNS[0],
     "title_separator": False,
@@ -213,6 +269,15 @@ DEFAULTS = {
     "cover_page": False,
     # property layout (new)
     "prop_layout": PROP_LAYOUTS[0],
+    # v5.1: design / speed
+    "theme_preset": "Notion Classic",
+    "heading_font": SAME_AS_BODY,
+    "accent_color": "#37352f",
+    "web_fonts": False,
+    "render_math": True,
+    "workers": 4,
+    "optimize_images": True,
+    "image_max_px": 1600,
 }
 
 
@@ -223,6 +288,10 @@ def load_config():
             cfg.update(json.load(f))
     except Exception:
         pass
+    if int(cfg.get("_ver", 0)) < CONFIG_VERSION:      # new, more comfortable defaults
+        cfg["margin_mm"]    = DEFAULTS["margin_mm"]
+        cfg["line_spacing"] = DEFAULTS["line_spacing"]
+        cfg["_ver"]         = CONFIG_VERSION
     if not cfg.get("token"):
         cfg["token"] = os.environ.get("NOTION_TOKEN", "")
     if not cfg.get("gemini_api_key"):
@@ -232,6 +301,7 @@ def load_config():
 
 def save_config(cfg):
     data = dict(cfg)
+    data["_ver"] = CONFIG_VERSION
     if not data.get("remember_token"):
         data["token"] = ""
     try:
@@ -352,17 +422,31 @@ def format_date(iso_str: str, fmt_preset: str) -> str:
 # ----------------------------------------------------------------------
 # Notion helpers
 # ----------------------------------------------------------------------
+_API_SEM = threading.Semaphore(3)      # Notion allows ~3 requests/second on average
+
+
+def set_api_concurrency(n):
+    global _API_SEM
+    _API_SEM = threading.Semaphore(max(1, int(n)))
+
+
 def api(fn, **kw):
-    """Call the Notion API, retrying on rate limits / temporary errors."""
-    for attempt in range(6):
+    """Call the Notion API, retrying on rate limits / temporary errors (thread-safe)."""
+    for attempt in range(7):
         try:
-            return fn(**kw)
+            with _API_SEM:
+                return fn(**kw)
         except Exception as e:
             s = str(e).lower()
             temp = any(x in s for x in ("429", "rate limit", "rate_limited", "timed out",
                                         "502", "503", "504", "bad gateway"))
-            if attempt < 5 and temp:
-                time.sleep(1.5 * (attempt + 1))
+            if attempt < 6 and temp:
+                wait = 1.5 * (attempt + 1)
+                try:
+                    wait = max(wait, float(getattr(e, "headers", {}).get("retry-after")))
+                except Exception:
+                    pass
+                time.sleep(wait)
                 continue
             raise
 
@@ -724,6 +808,9 @@ class R:
         path, data, url = img.get("path"), img.get("bytes"), img["url"]
         handling = self.cfg.get("img_handling", IMG_MODES[0])
         if self.kind == "pdf":
+            if img.get("opt_bytes"):
+                return f"data:{img.get('opt_mime', 'image/jpeg')};base64," + \
+                    base64.b64encode(img["opt_bytes"]).decode()
             if path:
                 return Path(path).resolve().as_uri()
             return data_uri(img) if data else url
@@ -752,270 +839,181 @@ BG_COLORS   = {"gray": "#f1f1ef", "brown": "#f4eeee", "orange": "#fbecdd", "yell
                "red": "#fdebec"}
 
 _FONT_STACKS = {
-    "Sans-serif": "-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif",
-    "Serif":      "Georgia, 'Times New Roman', Times, serif",
-    "Monospace":  "Consolas, 'Courier New', Courier, monospace",
+    "Sans-serif": "ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif",
+    "Serif":      "Georgia, Cambria, 'Times New Roman', Times, serif",
+    "Monospace":  "'Cascadia Code', Consolas, 'Courier New', Courier, monospace",
+}
+_FALLBACK_TAIL = {
+    "sans":   "'Segoe UI', Helvetica, Arial, sans-serif",
+    "serif":  "Georgia, 'Times New Roman', serif",
+    "mono":   "Consolas, 'Courier New', monospace",
+    "arabic": "'Segoe UI', Tahoma, Arial, sans-serif",
 }
 
 
-def _build_html_css(cfg: dict) -> str:
-    """Generate the full CSS block incorporating user styling preferences."""
-    font_stack   = _FONT_STACKS.get(cfg.get("font_family", "Sans-serif"),
-                                    _FONT_STACKS["Sans-serif"])
-    base_size    = int(cfg.get("base_font_size", 16))
-    line_spacing = float(cfg.get("line_spacing", 1.6))
-    text_align   = cfg.get("text_align", "Left").lower()
-    head_align   = cfg.get("heading_align", "Left").lower()
-    h1_size_rem  = round(2.3 * base_size / 16, 2)
-    h1_sep       = "border-bottom: 2px solid #e3e2e0; padding-bottom: .3em;" if cfg.get("title_separator") else ""
+def _safe_font_name(name):
+    return re.sub(r"[^\w \-]", "", name or "").strip()
 
-    css = f"""
-/* ── Notion Exporter – Notion-like stylesheet ── */
-*, *::before, *::after {{ box-sizing: border-box; }}
 
-body {{
-  font-family: {font_stack};
-  max-width: 860px;
-  margin: 2rem auto;
-  padding: 0 1.5rem;
-  color: #37352f;
-  line-height: {line_spacing};
-  font-size: {base_size}px;
-  text-align: {text_align};
-  -webkit-font-smoothing: antialiased;
-}}
+def _font_stack(name):
+    if name in _FONT_STACKS:
+        return _FONT_STACKS[name]
+    n = _safe_font_name(name)
+    if not n:
+        return _FONT_STACKS["Sans-serif"]
+    return f"'{n}', " + _FALLBACK_TAIL[FONT_CATEGORY.get(name, "sans")]
 
-/* ── Page title ── */
-h1.notion-title {{
-  font-size: {h1_size_rem}rem;
-  font-weight: 700;
-  margin: .15em 0 .3em;
-  line-height: 1.2;
-  text-align: {head_align};
-  letter-spacing: -.02em;
-  {h1_sep}
-}}
 
-.notion-page-icon {{
-  font-size: 3.5rem;
-  line-height: 1;
-  display: block;
-  text-align: {head_align};
-  margin-bottom: .3em;
-  user-select: none;
-}}
-.notion-page-icon img {{
-  height: 3.5rem;
-  width: auto;
-  display: inline-block;
-  vertical-align: bottom;
-}}
+def _web_font_links(cfg):
+    """<link> tags for Google Fonts (only when enabled; needs internet at export/view time)."""
+    if not cfg.get("web_fonts"):
+        return ""
+    names = []
+    for key in ("font_family", "heading_font"):
+        n = cfg.get(key, "")
+        if n in GOOGLE_FONTS and n not in names:
+            names.append(n)
+    if not names:
+        return ""
+    fam = "&".join("family=" + quote(n).replace("%20", "+") + ":wght@400;700" for n in names)
+    return ('<link rel="preconnect" href="https://fonts.googleapis.com">'
+            '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>'
+            f'<link rel="stylesheet" href="https://fonts.googleapis.com/css2?{fam}&display=swap">')
 
-/* ── Headings ── */
-h1, h2, h3 {{
-  font-weight: 600;
-  line-height: 1.25;
-  margin: 1.5em 0 .4em;
-  text-align: {head_align};
-  color: #37352f;
-}}
-h1 {{ font-size: 1.875em; }}
-h2 {{ font-size: 1.5em; }}
-h3 {{ font-size: 1.25em; }}
 
-/* ── Cover page ── */
-.notion-cover-page {{
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  min-height: 60vh;
-  padding: 3rem 0 2rem;
-}}
-.notion-cover-page + .notion-page-break {{
-  page-break-after: always;
-  break-after: page;
-  height: 0;
-  margin: 0;
-}}
+KATEX_HEAD = (
+    '<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">'
+    '<script defer src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>'
+    "<script>window.addEventListener('load',function(){if(!window.katex)return;"
+    "document.querySelectorAll('.eq').forEach(function(el){try{katex.render(el.textContent,el,"
+    "{throwOnError:false,displayMode:el.tagName==='DIV'});}catch(e){}});});</script>"
+)
 
-/* ── Property tables ── */
-table.props-table {{
-  border-collapse: collapse;
-  margin: 1em 0 1.5em;
-  width: 100%;
-  font-size: .9em;
-}}
-table.props-table th {{
-  width: 28%;
-  color: #787774;
-  font-weight: 500;
-  background: #fafafa;
-  text-align: left;
-  padding: .4em .7em;
-  border: 1px solid #e3e2e0;
-  vertical-align: top;
-}}
-table.props-table td {{
-  padding: .4em .7em;
-  border: 1px solid #e3e2e0;
-  vertical-align: top;
-}}
+_HEX_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 
-/* ── Inline property pills ── */
-.props-pills {{
-  display: flex;
-  flex-wrap: wrap;
-  gap: .4em;
-  margin: .6em 0 1.2em;
-}}
-.props-pills .pill {{
-  display: inline-flex;
-  align-items: center;
-  gap: .3em;
-  background: #f1f1ef;
-  border-radius: 4px;
-  padding: .15em .55em;
-  font-size: .82em;
-  color: #37352f;
-  line-height: 1.4;
-}}
-.props-pills .pill-key {{
-  color: #787774;
-  font-weight: 500;
-}}
-.props-pills .pill-val {{ color: #37352f; }}
+_CSS_TEMPLATE = r"""
+/* ---- PageOut for Notion: Notion-like stylesheet ---- */
+*, *::before, *::after { box-sizing: border-box; }
+:root { --accent: @@ACCENT@@; --ink: #37352f; --muted: rgba(55,53,47,.65); --line: rgba(55,53,47,.09);
+        --line2: #e9e9e7; --soft: #f7f6f3; --callout: rgba(241,241,239,.6); }
+html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+body {
+  font-family: @@BODY_FONT@@, 'Segoe UI Emoji', 'Apple Color Emoji', 'Noto Color Emoji';
+  max-width: 900px; margin: 2rem auto; padding: 0 1.6rem;
+  color: var(--ink); line-height: @@LINE@@; font-size: @@SIZE@@px; text-align: @@ALIGN@@;
+  -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; font-kerning: normal;
+  overflow-wrap: break-word;
+}
+/* Arabic / Hebrew paragraphs flow right-to-left automatically */
+p, li, h1, h2, h3, blockquote, summary, td, th, figcaption, .callout-body { unicode-bidi: plaintext; }
+p { margin: .28em 0; orphans: 3; widows: 3; }
 
-/* ── Minimalist list ── */
-dl.props-list {{
-  margin: .5em 0 1.5em;
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: .2em .8em;
-  font-size: .9em;
-}}
-dl.props-list dt {{
-  color: #787774;
-  font-weight: 500;
-  white-space: nowrap;
-}}
-dl.props-list dd {{
-  margin: 0;
-  color: #37352f;
-}}
+/* title + icon */
+.notion-page-icon { font-size: 78px; line-height: 1.1; display: block; text-align: @@HALIGN@@;
+  margin: 0 0 .12em; user-select: none; }
+.notion-page-icon img { height: 78px; width: auto; display: inline-block; vertical-align: bottom; }
+h1.notion-title { font-family: @@HEAD_FONT@@; font-size: @@H1REM@@rem; font-weight: 700; line-height: 1.2;
+  margin: 0 0 .25em; text-align: @@HALIGN@@; color: var(--ink); break-after: avoid; @@SEP@@ }
 
-/* ── Tables ── */
-table {{
-  border-collapse: collapse;
-  margin: 1em 0;
-  width: 100%;
-}}
-td, th {{
-  border: 1px solid #e3e2e0;
-  padding: .4em .6em;
-  vertical-align: top;
-  text-align: left;
-}}
-thead th, table th {{
-  background: #fafafa;
-  font-weight: 600;
-}}
+/* headings */
+h1, h2, h3 { font-family: @@HEAD_FONT@@; font-weight: 600; line-height: 1.3; text-align: @@HALIGN@@;
+  color: var(--accent); break-after: avoid; }
+h1 { font-size: 1.875em; margin: 1.6em 0 .2em; }
+h2 { font-size: 1.5em;   margin: 1.3em 0 .2em; }
+h3 { font-size: 1.25em;  margin: 1.1em 0 .15em; }
 
-/* ── Blockquote / Quote ── */
-blockquote {{
-  border-left: 3px solid #37352f;
-  margin: 1em 0;
-  padding: .2em 1em;
-  color: #37352f;
-}}
+a { color: var(--accent); text-decoration: underline; text-decoration-color: rgba(55,53,47,.4);
+    text-decoration-thickness: .05em; text-underline-offset: 2px; }
+strong { font-weight: 600; }
 
-/* ── Code ── */
-pre {{
-  background: #f7f6f3;
-  border: 1px solid #e3e2e0;
-  border-radius: 6px;
-  padding: 1em 1.2em;
-  overflow: auto;
-  white-space: pre-wrap;
-  word-break: break-word;
-  font-size: .88em;
-  margin: 1em 0;
-}}
-code {{
-  background: #f1f0ee;
-  padding: .15em .35em;
-  border-radius: 4px;
-  font-family: Consolas, 'Courier New', monospace;
-  font-size: .88em;
-}}
-pre code {{
-  background: none;
-  padding: 0;
-  font-size: 1em;
-  border-radius: 0;
-}}
+/* cover page */
+.notion-cover-page { display: flex; flex-direction: column; justify-content: center; min-height: 60vh; padding: 3rem 0 2rem; }
+.notion-page-break { page-break-after: always; break-after: page; height: 0; margin: 0; }
+@media print { .notion-cover-page { min-height: 80vh; } }
 
-/* ── Callout ── */
-.callout {{
-  display: flex;
-  gap: .8em;
-  border-radius: 6px;
-  padding: 1em 1.1em;
-  margin: 1em 0;
-  background: #f7f6f3;
-  border: 1px solid #e3e2e0;
-}}
-.callout .callout-icon {{
-  font-size: 1.3em;
-  line-height: 1.4;
-  flex-shrink: 0;
-}}
-.callout .callout-body {{ flex: 1; min-width: 0; }}
+/* properties (Notion style: plain key / value rows) */
+table.props-table { border-collapse: collapse; margin: .7em 0 1.4em; width: 100%; font-size: .95em;
+  border: none; border-bottom: 1px solid var(--line); }
+table.props-table th { width: 24%; color: var(--muted); font-weight: 400; background: none; text-align: left;
+  padding: .28em .8em .28em 0; border: none; vertical-align: top; }
+table.props-table td { padding: .28em .3em; border: none; vertical-align: top; }
+.props-pills { display: flex; flex-wrap: wrap; gap: .35em; margin: .7em 0 1.3em; }
+.props-pills .pill { display: inline-flex; align-items: center; gap: .35em; background: var(--soft);
+  border-radius: 4px; padding: .12em .6em; font-size: .85em; line-height: 1.5; }
+.props-pills .pill-key { color: var(--muted); }
+dl.props-list { margin: .6em 0 1.5em; display: grid; grid-template-columns: auto 1fr; gap: .2em 1.2em; font-size: .95em; }
+dl.props-list dt { color: var(--muted); white-space: nowrap; }
+dl.props-list dd { margin: 0; }
 
-/* ── Images ── */
-figure {{
-  margin: 1.2em 0;
-}}
-figure img {{
-  max-width: 100%;
-  height: auto;
-  border-radius: 4px;
-  display: block;
-}}
-figcaption {{
-  color: #787774;
-  font-size: .82em;
-  margin-top: .3em;
-  font-style: italic;
-}}
-/* Maximize-image mode */
-.maximize-images figure img {{
-  width: 100%;
-  object-fit: contain;
-}}
-/* One-per-page mode */
-.one-image-per-page figure {{
-  page-break-after: always;
-  break-after: page;
-}}
+/* tables (Notion simple table) */
+table { border-collapse: collapse; margin: 1em 0; width: 100%; font-size: .95em; }
+thead { display: table-header-group; } tr { break-inside: avoid; }
+td, th { border: 1px solid var(--line2); padding: .4em .65em; vertical-align: top; text-align: left; }
+table:not(.props-table) th { background: var(--soft); font-weight: 500; }
 
-/* ── Misc ── */
-.indent  {{ margin-left: 1.4em; }}
-.cols    {{ display: flex; gap: 1.5em; }}
-.col     {{ flex: 1; min-width: 0; }}
-ul.todo  {{ list-style: none; padding-left: .4em; }}
-hr       {{ border: none; border-top: 1px solid #e3e2e0; margin: 1.5em 0; }}
-section.page {{ margin-bottom: 3em; }}
-.subpage {{ margin-top: 2em; }}
-p        {{ margin: .5em 0; }}
+/* quotes, code, callouts */
+blockquote { border-left: 3px solid currentColor; margin: .6em 0; padding: 0 .9em; font-size: 1.2em; line-height: 1.5; }
+pre { background: var(--soft); border-radius: 4px; padding: 1.5em 1.1em 1.5em 1.7em; overflow: auto;
+  white-space: pre-wrap; word-break: break-word; font-size: .85em; line-height: 1.5; margin: .8em 0; tab-size: 2; }
+code { background: rgba(135,131,120,.15); color: #eb5757; padding: .2em .4em; border-radius: 3px;
+  font-family: @@CODE_FONT@@; font-size: 85%; }
+pre, pre code { font-family: @@CODE_FONT@@; }
+pre code { background: none; color: inherit; padding: 0; font-size: 1em; border-radius: 0; }
+.callout { display: flex; gap: .7em; border-radius: 4px; padding: 1em 1em 1em .8em; margin: .8em 0;
+  background: var(--callout); border: 1px solid var(--line2); }
+.callout .callout-icon { font-size: 1.3em; line-height: 1.4; flex-shrink: 0; }
+.callout .callout-body { flex: 1; min-width: 0; }
+.callout .callout-body > :first-child { margin-top: 0; } .callout .callout-body > :last-child { margin-bottom: 0; }
+details { margin: .3em 0; } summary { cursor: pointer; font-weight: 400; }
+details > *:not(summary) { margin-left: 1.4em; }
+.eq { font-family: 'Cambria Math', 'STIX Two Math', 'Times New Roman', serif; }
+div.eq { text-align: center; margin: .9em 0; overflow-x: auto; }
 
-/* ── Print / PDF ── */
-@media print {{
-  body {{ max-width: none; margin: 0; padding: 1cm; }}
-  pre, table, figure, .callout {{ break-inside: avoid; }}
-  h1, h2, h3 {{ break-after: avoid; }}
-  .notion-cover-page {{ min-height: 80vh; }}
-}}
+/* images */
+figure { margin: .8em 0; }
+figure img { max-width: 100%; height: auto; border-radius: 3px; display: block; margin: 0 auto; }
+figcaption { color: var(--muted); font-size: .85em; margin-top: .4em; text-align: center; }
+.maximize-images figure img { width: 100%; object-fit: contain; }
+.one-image-per-page figure { page-break-after: always; break-after: page; }
+
+/* lists */
+ul, ol { padding-left: 1.5em; margin: .2em 0; } li { margin: .1em 0; }
+ul { list-style: disc; } ul ul { list-style: circle; } ul ul ul { list-style: square; }
+ol { list-style: decimal; } ol ol { list-style: lower-alpha; } ol ol ol { list-style: lower-roman; }
+ul.todo { list-style: none; padding-left: .2em; } ul.todo input { accent-color: var(--accent); margin-right: .4em; }
+hr { border: none; border-top: 1px solid var(--line); margin: 1.2em 0; }
+.indent { margin-left: 1.5em; }
+.cols { display: flex; gap: 1.6em; } .col { flex: 1; min-width: 0; }
+section.page { margin-bottom: 3em; } .subpage { margin-top: 2em; }
+
+@media print {
+  body { max-width: none; margin: 0; padding: 0; }
+  pre, figure, .callout, blockquote { break-inside: avoid; }
+}
 """
+
+
+def _build_html_css(cfg: dict) -> str:
+    """Full stylesheet built from the user's design settings."""
+    body_font = _font_stack(cfg.get("font_family", "Sans-serif"))
+    hf        = cfg.get("heading_font", SAME_AS_BODY)
+    head_font = body_font if hf in ("", SAME_AS_BODY) else _font_stack(hf)
+    accent    = cfg.get("accent_color", "#37352f")
+    if not _HEX_RE.match(str(accent)):
+        accent = "#37352f"
+    size  = int(cfg.get("base_font_size", 16))
+    align = "justify" if str(cfg.get("text_align", "Left")).lower() == "justify" else "start"
+    halign = "center" if str(cfg.get("heading_align", "Left")).lower() == "center" else "start"
+    sep = "border-bottom: 3px solid var(--accent); padding-bottom: .3em;" if cfg.get("title_separator") else ""
+    repl = {
+        "@@ACCENT@@": accent, "@@BODY_FONT@@": body_font, "@@HEAD_FONT@@": head_font,
+        "@@CODE_FONT@@": _FONT_STACKS["Monospace"], "@@LINE@@": str(float(cfg.get("line_spacing", 1.6))),
+        "@@SIZE@@": str(size), "@@ALIGN@@": align, "@@HALIGN@@": halign,
+        "@@H1REM@@": str(round(2.5 * size / 16, 2)), "@@SEP@@": sep,
+    }
+    css = _CSS_TEMPLATE
+    for k, v in repl.items():
+        css = css.replace(k, v)
     return css
 
 
@@ -1278,16 +1276,18 @@ def block_html(b, r, img_counter=None):
 
 def wrap_html(title, body, cfg):
     css  = _build_html_css(cfg) + (cfg.get("custom_css") or "")
-    # Body wrapper classes for image modes
     body_classes = []
     if cfg.get("maximize_images"):
         body_classes.append("maximize-images")
     if cfg.get("one_image_per_page"):
         body_classes.append("one-image-per-page")
     cls_attr = f' class="{" ".join(body_classes)}"' if body_classes else ""
-    return (f'<!doctype html><html><head><meta charset="utf-8">'
+    head_extra = _web_font_links(cfg)
+    if cfg.get("render_math", True) and 'class="eq"' in body:
+        head_extra += KATEX_HEAD
+    return (f'<!doctype html><html lang="en"><head><meta charset="utf-8">'
             f'<meta name="viewport" content="width=device-width, initial-scale=1">'
-            f'<title>{esc(title)}</title><style>{css}</style></head>'
+            f'<title>{esc(title)}</title>{head_extra}<style>{css}</style></head>'
             f'<body{cls_attr}>{body}</body></html>')
 
 
@@ -1649,7 +1649,7 @@ def build_docx(title, icon_text, rows, tree, r, path, cfg):
                 img_num[0] += 1
                 if img and img.get("bytes"):
                     try:
-                        doc.add_picture(io.BytesIO(img["bytes"]), width=Inches(5.5))
+                        doc.add_picture(io.BytesIO(img.get("opt_bytes") or img["bytes"]), width=Inches(5.5))
                         # Caption
                         show_names = cfg.get("show_image_names", False)
                         cap_text   = plain(d.get("caption"))
@@ -1714,6 +1714,12 @@ def build_docx(title, icon_text, rows, tree, r, path, cfg):
                 add(kids, depth + 1)
 
     add(tree)
+    try:   # drop a trailing empty "page break" paragraph (would create a blank last page)
+        last = doc.paragraphs[-1]
+        if not last.text.strip() and last._p.xpath(".//w:pageBreakBefore"):
+            last._p.getparent().remove(last._p)
+    except Exception:
+        pass
     doc.save(path)
 
 
@@ -2089,6 +2095,12 @@ def blocks_tex(blocks, r, it, base_dir, log_fn=None, img_counter=None, page_ocr=
                 i += 1
                 continue
 
+            if LATEX_IMAGES_AS_COMMENTS:
+                nm = os.path.basename(unquote(urlparse((img or {}).get("url", "")).path)) or "image"
+                out.append(f"% [Image {cur_img_num} omitted: {nm.replace(chr(10), ' ')}]\n")
+                i += 1
+                continue
+
             img_path = img.get("path") if img else None
             if img_path and os.path.splitext(img_path)[1].lower() not in (".png", ".jpg", ".jpeg", ".pdf"):
                 out.append(f"% [Image format not supported by LaTeX, convert to PNG/JPG: {os.path.basename(img_path)}]\n")
@@ -2186,6 +2198,51 @@ def build_complete_latex(title: str, prop_rows: list, body_tex: str, cfg: dict) 
 # Browser / PDF
 # ----------------------------------------------------------------------
 STEALTH_ARGS = ["--disable-blink-features=AutomationControlled"]
+
+
+_PAINT_RE = re.compile(rb"(?<![A-Za-z0-9_/.\-])(?:f\*?|F|S|s|B\*?|b\*?|sh|Do|Tj|TJ)(?![A-Za-z0-9_])")
+
+
+def _page_is_blank(page):
+    """True when a PDF page has no text, no images and nothing painted."""
+    try:
+        if (page.extract_text() or "").strip():
+            return False
+    except Exception:
+        return False
+    try:
+        if len(page.images):
+            return False
+    except Exception:
+        pass
+    try:
+        contents = page.get_contents()
+        if contents is None:
+            return True
+        return not _PAINT_RE.search(contents.get_data())
+    except Exception:
+        return False
+
+
+def remove_blank_pages(path):
+    """Delete empty pages from a PDF file in place. Returns how many were removed."""
+    try:
+        from pypdf import PdfReader, PdfWriter
+    except ImportError:
+        from PyPDF2 import PdfReader, PdfWriter
+    reader = PdfReader(path)
+    keep = [i for i, pg in enumerate(reader.pages) if not _page_is_blank(pg)]
+    removed = len(reader.pages) - len(keep)
+    if not keep or removed == 0:
+        return 0
+    w = PdfWriter()
+    for i in keep:
+        w.add_page(reader.pages[i])
+    tmp = path + ".tmp"
+    with open(tmp, "wb") as f:
+        w.write(f)
+    os.replace(tmp, path)
+    return removed
 
 
 class Cancelled(Exception):
@@ -2389,6 +2446,7 @@ class Exporter:
         self.failed     = []
         self.last_tex   = ""
         self._tex_body  = ""
+        self._lock      = threading.Lock()
 
     # ---- sources ----
     def fetch_roots(self):
@@ -2475,23 +2533,51 @@ class Exporter:
         if c["img_subfolder"]:
             folder = os.path.join(folder, *it.dirparts, it.base)
         os.makedirs(folder, exist_ok=True)
-        path = os.path.join(folder, name + img["ext"])
-        k = 2
-        while path.lower() in self.used_paths:
-            path = os.path.join(folder, f"{name} ({k:02d}){img['ext']}")
-            k += 1
-        self.used_paths.add(path.lower())
+        with self._lock:
+            path = os.path.join(folder, name + img["ext"])
+            k = 2
+            while path.lower() in self.used_paths:
+                path = os.path.join(folder, f"{name} ({k:02d}){img['ext']}")
+                k += 1
+            self.used_paths.add(path.lower())
         return path
+
+    def _optimize(self, img):
+        """Shrink big photos for PDF/Word embedding (much faster + smaller files)."""
+        c = self.cfg
+        if not c.get("optimize_images", True) or img.get("ext") in (".svg", ".gif"):
+            return
+        try:
+            from PIL import Image, ImageOps
+            mx = int(c.get("image_max_px", 1600))
+            im = Image.open(io.BytesIO(img["bytes"]))
+            if max(im.size) <= mx and len(img["bytes"]) < 400_000:
+                return
+            im = ImageOps.exif_transpose(im)
+            im.thumbnail((mx, mx), Image.LANCZOS)
+            buf = io.BytesIO()
+            if im.mode in ("RGBA", "LA") or (im.mode == "P" and "transparency" in im.info):
+                im.convert("RGBA").save(buf, "PNG", optimize=True)
+                mime = "image/png"
+            else:
+                im.convert("RGB").save(buf, "JPEG", quality=85, optimize=True)
+                mime = "image/jpeg"
+            if len(buf.getvalue()) < len(img["bytes"]):
+                img["opt_bytes"], img["opt_mime"] = buf.getvalue(), mime
+        except Exception:
+            pass
 
     def prepare_images(self, it):
         c          = self.cfg
         handling   = c["img_handling"]
         engine_api = c["engine"] == ENGINES[0]
-        save_files = c["fmt_images"] or handling == IMG_MODES[1] or \
-            (handling == IMG_MODES[0] and (c["fmt_md"] or c.get("fmt_tex", False))) or c.get("fmt_tex", False)
-        need_bytes = save_files or c["fmt_docx"] or c.get("fmt_tex", False) or c.get("gemini_math_ocr", False) or \
-            (handling == IMG_MODES[0] and (c["fmt_html"] or (c["fmt_pdf"] and engine_api)))
-        if not (save_files or need_bytes):
+        tex_files  = c.get("fmt_tex", False) and not LATEX_IMAGES_AS_COMMENTS
+        save_files = c["fmt_images"] or handling == IMG_MODES[1] or tex_files or \
+            (handling == IMG_MODES[0] and c["fmt_md"])
+        embed_pdf  = c["fmt_pdf"] and engine_api and handling == IMG_MODES[0]
+        need_bytes = save_files or c["fmt_docx"] or c.get("gemini_math_ocr", False) or embed_pdf or \
+            (handling == IMG_MODES[0] and c["fmt_html"])
+        if not need_bytes:
             return
         imgs = []
         if c["img_cover"] and it.page and it.page.get("cover"):
@@ -2510,17 +2596,30 @@ class Exporter:
                 img = {"url": url, "caption": plain(d.get("caption")), "n": n}
                 b["_img"] = img
                 imgs.append(img)
-        for img in imgs:
+        want_opt = embed_pdf or c["fmt_docx"]
+
+        def fetch(img):
             try:
                 data, ctype = download(img["url"])
                 img["bytes"], img["ext"] = data, detect_ext(img["url"], ctype, data)
-                if save_files:
-                    path = self.image_path(it, img, data)
-                    with open(path, "wb") as f:
-                        f.write(data)
-                    img["path"] = path
+                if want_opt:
+                    self._optimize(img)
             except Exception as e:
                 self.failed.append((f"{it.label} (image {img['n']})", str(e)[:80]))
+
+        if imgs:
+            with ThreadPoolExecutor(max_workers=min(8, len(imgs))) as ex:   # downloads in parallel
+                list(ex.map(fetch, imgs))
+        if save_files:
+            for img in imgs:
+                if "bytes" in img:
+                    try:
+                        path = self.image_path(it, img, img["bytes"])
+                        with open(path, "wb") as f:
+                            f.write(img["bytes"])
+                        img["path"] = path
+                    except Exception as e:
+                        self.failed.append((f"{it.label} (image {img['n']})", str(e)[:80]))
         it.imgs = imgs
 
     # ---- content helpers ----
@@ -2594,6 +2693,16 @@ class Exporter:
         self._tex_body = body
         return build_complete_latex(it.title, self.prop_rows(it), body, self.cfg)
 
+    def _clean_pdf(self, path):
+        if not self.cfg.get("remove_blank_pages", True):
+            return
+        try:
+            n = remove_blank_pages(path)
+            if n:
+                self.log(f"  removed {n} blank page(s)")
+        except Exception:
+            pass
+
     # ---- pdf ----
     def pdf_browser(self, page, it, path, hide_names):
         for attempt in range(int(self.cfg["retries"]) + 1):
@@ -2614,8 +2723,16 @@ class Exporter:
         with open(hp, "w", encoding="utf-8") as f:
             f.write(html)
         page.goto(Path(hp).resolve().as_uri(), wait_until="load")
-        page.wait_for_timeout(150)
+        try:   # fonts / math finished (max 8 s, so a missing internet connection never hangs)
+            page.evaluate("Promise.race([document.fonts ? document.fonts.ready : 0,"
+                          " new Promise(r => setTimeout(r, 8000))])")
+        except Exception:
+            pass
         page.pdf(**pdf_kwargs(self.cfg, path))
+        try:
+            os.remove(hp)
+        except OSError:
+            pass
 
     # ---- main ----
     def run(self, selected_roots=None):
@@ -2640,6 +2757,24 @@ class Exporter:
         self.log(f"Exporting {total} page(s) to: " +
                  ", ".join(FORMAT_LABELS[f] for f in formats + (["images"] if c["fmt_images"] else [])))
 
+        workers = max(1, min(8, int(c.get("workers", 4))))
+        set_api_concurrency(min(3, workers))
+        prefetch_pool = ThreadPoolExecutor(max_workers=workers) if need_tree else None
+        futs, window  = {}, workers * 2
+
+        def prep(it):
+            self.tree_of(it)
+            if inline:
+                attach_inline(self.notion, it.tree, self.cache, 1, int(c["sub_depth"]))
+            self.prepare_images(it)
+
+        def submit(k):
+            if prefetch_pool and 1 <= k <= total:
+                futs[k] = prefetch_pool.submit(prep, items[k - 1])
+
+        for k in range(1, min(total, window) + 1):      # pages are fetched in the background
+            submit(k)                                   # while the previous one is being rendered
+
         hide_names   = [n for n in self.all_props if n not in self.shown_props] if self.all_props else []
         made_pdfs, combined_html, combined_md, made_tex = [], [], [], []
         tmp = tempfile.mkdtemp(prefix="notion_export_")
@@ -2661,10 +2796,9 @@ class Exporter:
                 self.progress(i - 1, total)
                 try:
                     if need_tree:
-                        self.tree_of(it)
-                        if inline:
-                            attach_inline(self.notion, it.tree, self.cache, 1, int(c["sub_depth"]))
-                        self.prepare_images(it)
+                        fut = futs.pop(i)
+                        submit(i + window)
+                        fut.result()
 
                     for fmt in formats:
                         path = self.target(fmt, it)
@@ -2678,6 +2812,7 @@ class Exporter:
                                     self.pdf_api(page, it, path, tmp)
                                 else:
                                     self.pdf_browser(page, it, path, hide_names)
+                                self._clean_pdf(path)
                                 made_pdfs.append((it.label, path))
                             elif fmt == "html":
                                 body = self.body_html(it, "html", os.path.dirname(path))
@@ -2719,6 +2854,9 @@ class Exporter:
                         if c["fmt_md"]:
                             combined_md.append(self.text_md(it, md_root))
                     self.log(f"[{i}/{total}] {it.label}")
+                    for im in it.imgs:                  # free memory early
+                        im.pop("bytes", None)
+                        im.pop("opt_bytes", None)
                 except Cancelled:
                     raise
                 except Exception as e:
@@ -2727,6 +2865,8 @@ class Exporter:
                     self.failed.append((it.label, str(e).splitlines()[0][:100] if str(e) else "error"))
                     self.log(f"[{i}/{total}] FAILED: {it.label}")
         finally:
+            if prefetch_pool:
+                prefetch_pool.shutdown(wait=False, cancel_futures=True)
             for obj in (ctx, browser):
                 try:
                     if obj:
@@ -2787,13 +2927,191 @@ class Exporter:
 # ----------------------------------------------------------------------
 # GUI
 # ----------------------------------------------------------------------
+class ScrollFrame(ttk.Frame):
+    """A vertically scrollable page. Mouse-wheel routing is done globally by App._on_wheel."""
+
+    def __init__(self, parent):
+        super().__init__(parent)
+        bg = ttk.Style().lookup("TFrame", "background") or "#f0f0f0"
+        self.canvas = tk.Canvas(self, highlightthickness=0, borderwidth=0, bg=bg, yscrollincrement=20)
+        sb = ttk.Scrollbar(self, orient="vertical", command=self.canvas.yview)
+        self.inner = ttk.Frame(self.canvas)
+        self._win = self.canvas.create_window((0, 0), window=self.inner, anchor="nw")
+        self.inner.bind("<Configure>",
+                        lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
+        self.canvas.bind("<Configure>", lambda e: self.canvas.itemconfigure(self._win, width=e.width))
+        self.canvas.configure(yscrollcommand=sb.set)
+        self.canvas.pack(side="left", fill="both", expand=True)
+        sb.pack(side="right", fill="y")
+        self.canvas._wheel_canvas = self.canvas
+
+
+class CheckList(ttk.Frame):
+    """A scrollable list with a checkbox in front of every row."""
+
+    def __init__(self, parent, height=190, empty_text="Nothing loaded yet."):
+        super().__init__(parent)
+        self.empty_text = empty_text
+        self.canvas = tk.Canvas(self, height=height, highlightthickness=1, highlightbackground="#c4c4c4",
+                                bg="white", yscrollincrement=20)
+        sb = ttk.Scrollbar(self, orient="vertical", command=self.canvas.yview)
+        self.inner = tk.Frame(self.canvas, bg="white")
+        self._win = self.canvas.create_window((0, 0), window=self.inner, anchor="nw")
+        self.inner.bind("<Configure>",
+                        lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
+        self.canvas.bind("<Configure>", lambda e: self.canvas.itemconfigure(self._win, width=e.width))
+        self.canvas.configure(yscrollcommand=sb.set)
+        self.canvas.pack(side="left", fill="both", expand=True)
+        sb.pack(side="right", fill="y")
+        self.canvas._wheel_canvas = self.canvas
+        self.vars, self.labels = [], []
+        self.info = tk.StringVar()
+        self.set_items([])
+
+    def _update(self, *_):
+        n = sum(1 for v in self.vars if v.get())
+        self.info.set(f"{n} of {len(self.vars)} selected" if self.vars else "")
+
+    def set_items(self, labels, checked=True):
+        for w in self.inner.winfo_children():
+            w.destroy()
+        self.vars, self.labels = [], list(labels)
+        if not labels:
+            tk.Label(self.inner, text=self.empty_text, bg="white", fg="#888888",
+                     anchor="w").pack(fill="x", padx=8, pady=8)
+        for lab in labels:
+            v = tk.BooleanVar(value=checked)
+            v.trace_add("write", self._update)
+            self.vars.append(v)
+            tk.Checkbutton(self.inner, text=lab, variable=v, bg="white", activebackground="#eaf2ff",
+                           anchor="w", justify="left", relief="flat", borderwidth=0).pack(
+                fill="x", padx=4, pady=0)
+        self.canvas.yview_moveto(0)
+        self._update()
+
+    def select_all(self, flag=True):
+        for v in self.vars:
+            v.set(flag)
+
+    def selected_indices(self):
+        return [i for i, v in enumerate(self.vars) if v.get()]
+
+    def selected_labels(self):
+        return [self.labels[i] for i in self.selected_indices()]
+
+
+_GENERIC_FONT_ALIAS = {"Sans-serif": "Helvetica", "Serif": "Times", "Monospace": "Courier"}
+
+
+class FontPicker(tk.Toplevel):
+    """Font chooser where every font name is shown in its own typeface."""
+
+    SAMPLE = "The quick brown fox 0123456789  —  مرحبا بالعالم"
+
+    def __init__(self, app, current, allow_same, on_pick):
+        super().__init__(app.root)
+        self.app, self.on_pick, self.current = app, on_pick, current
+        self.title("Choose a font")
+        self.geometry("500x600")
+        self.transient(app.root)
+        self.entries = []                     # (name or None, display)
+        names = ([SAME_AS_BODY] if allow_same else []) + ["Sans-serif", "Serif", "Monospace"]
+        self.sections = [("Generic", names)]
+        cat = [n for n, _, _ in FONT_CATALOG]
+        self.sections.append(("Recommended  (grey = not installed on this PC; Google Fonts need the option in the Design tab)", cat))
+        self.sections.append(("Installed on this PC", [f for f in app.font_values if f not in cat
+                                                      and f not in _GENERIC_FONT_ALIAS]))
+        top = ttk.Frame(self)
+        top.pack(fill="x", padx=10, pady=(10, 4))
+        ttk.Label(top, text="Search:").pack(side="left")
+        self.q = tk.StringVar()
+        ent = ttk.Entry(top, textvariable=self.q)
+        ent.pack(side="left", fill="x", expand=True, padx=6)
+        ent.focus_set()
+        self.q.trace_add("write", lambda *_: self.fill())
+        mid = ttk.Frame(self)
+        mid.pack(fill="both", expand=True, padx=10, pady=4)
+        self.txt = tk.Text(mid, wrap="none", cursor="arrow", bg="white", relief="solid", borderwidth=1,
+                           spacing1=3, spacing3=3)
+        sb = ttk.Scrollbar(mid, command=self.txt.yview)
+        self.txt.config(yscrollcommand=sb.set)
+        self.txt.pack(side="left", fill="both", expand=True)
+        sb.pack(side="right", fill="y")
+        self.txt.tag_configure("head", font=("", 9, "bold"), foreground="#6b7280", spacing1=8)
+        self.txt.tag_configure("pick", background="#cfe3ff")
+        self.txt.tag_configure("web", foreground="#8a8f98")
+        self.txt.bind("<Button-1>", self.on_click)
+        self.txt.bind("<Double-Button-1>", lambda e: (self.on_click(e), self.use()))
+        self.preview = tk.Label(self, text=self.SAMPLE, bg="white", relief="solid", borderwidth=1,
+                                height=2, wraplength=470)
+        self.preview.pack(fill="x", padx=10, pady=4)
+        bt = ttk.Frame(self)
+        bt.pack(fill="x", padx=10, pady=(2, 10))
+        ttk.Button(bt, text="Use this font", command=self.use).pack(side="right")
+        ttk.Button(bt, text="Cancel", command=self.destroy).pack(side="right", padx=6)
+        self.chosen = current
+        self.fill()
+        self.grab_set()
+
+    def family_for(self, name):
+        fam = _GENERIC_FONT_ALIAS.get(name, name)
+        return fam if (fam in self.app.installed or fam in _GENERIC_FONT_ALIAS.values()) else None
+
+    def fill(self):
+        q = self.q.get().strip().lower()
+        t = self.txt
+        t.config(state="normal")
+        t.delete("1.0", "end")
+        self.lines = {}
+        n = 0
+        for title, items in self.sections:
+            items = [x for x in items if q in x.lower()]
+            if not items:
+                continue
+            t.insert("end", title + "\n", "head")
+            for name in items:
+                tag = "f%d" % n
+                n += 1
+                fam = self.family_for(name)
+                if fam:
+                    t.tag_configure(tag, font=(fam, 13))
+                    t.insert("end", "  " + name + "\n", tag)
+                else:
+                    t.tag_configure(tag, font=("", 11))
+                    t.insert("end", "  " + name + "\n", (tag, "web"))
+                self.lines[int(t.index("end-2l").split(".")[0])] = name
+        t.config(state="disabled")
+        self.mark()
+
+    def mark(self):
+        self.txt.tag_remove("pick", "1.0", "end")
+        for ln, name in self.lines.items():
+            if name == self.chosen:
+                self.txt.tag_add("pick", f"{ln}.0", f"{ln}.end+1c")
+                self.txt.see(f"{ln}.0")
+        fam = self.family_for(self.chosen) if self.chosen else None
+        self.preview.config(font=(fam, 15) if fam else ("", 12))
+
+    def on_click(self, e):
+        ln = int(self.txt.index(f"@{e.x},{e.y}").split(".")[0])
+        if ln in self.lines:
+            self.chosen = self.lines[ln]
+            self.mark()
+        return "break"
+
+    def use(self):
+        if self.chosen:
+            self.on_pick(self.chosen)
+        self.destroy()
+
+
 class App:
     def __init__(self):
         self.cfg0 = load_config()
         self.root = tk.Tk()
-        self.root.title(f"{APP_NAME} v{APP_VERSION}")
+        self.root.title(f"{APP_NAME}  —  {APP_STAGE} {APP_VERSION}")
         sh = self.root.winfo_screenheight()
-        self.root.geometry(f"820x{min(960, sh - 90)}")
+        self.root.geometry(f"860x{min(1000, sh - 80)}")
         self.root.minsize(700, 560)
         self.root.resizable(True, True)
 
@@ -2813,6 +3131,14 @@ class App:
                 self.V[key] = tk.DoubleVar(value=float(val))
             else:
                 self.V[key] = tk.StringVar(value=str(val))
+        try:
+            installed = sorted({f for f in tkfont.families(self.root) if not f.startswith("@")})
+        except Exception:
+            installed = []
+        cat = [n for n, _, _ in FONT_CATALOG]
+        self.installed = set(installed)
+        self.font_values = ["Sans-serif", "Serif", "Monospace"] + cat + \
+            [f for f in installed if f not in cat]
         self.loaded_props, self.loaded_pages, self.loaded_source = [], [], ""
         self.q      = queue.Queue()
         self.cancel = threading.Event()
@@ -2873,7 +3199,9 @@ class App:
 
     def combo(self, parent, key, values, state="readonly", width=None):
         kw = {"width": width} if width else {}
-        return ttk.Combobox(parent, textvariable=self.V[key], values=values, state=state, **kw)
+        cb = ttk.Combobox(parent, textvariable=self.V[key], values=values, state=state, **kw)
+        cb._narrow = bool(width)
+        return cb
 
     def check(self, parent, key, text):
         return ttk.Checkbutton(parent, text=text, variable=self.V[key])
@@ -2970,10 +3298,14 @@ class App:
                 )
                 return
         save_config(c)
-        shown    = [self.props_list.get(i) for i in self.props_list.curselection()]
+        shown    = self.props_list.selected_labels()
         selected = None
-        sel      = self.pages_list.curselection()
-        if sel and self.loaded_source == c["database"].strip():
+        if self.loaded_pages and self.loaded_source == c["database"].strip():
+            sel = self.pages_list.selected_indices()
+            if not sel:
+                messagebox.showerror("No pages ticked", "Tick at least one page in tab 2, "
+                                     "or clear the list by loading pages again.")
+                return
             selected = [self.loaded_pages[i] for i in sel]
         self.cancel.clear()
         self.set_running(True)
@@ -3033,10 +3365,7 @@ class App:
                 messagebox.showerror("Could not load properties", str(err))
                 return
             self.loaded_props = names
-            self.props_list.delete(0, tk.END)
-            for n in names:
-                self.props_list.insert(tk.END, n)
-            self.props_list.select_set(0, tk.END)
+            self.props_list.set_items(names)
             self.sort_combo.config(values=SORT_BUILTIN + names)
             self.filter_combo.config(values=[""] + names + ["Title", "Date"])
             self.hint.set("Placeholders: {title} {date} {index} {created} {edited} {parent}\n"
@@ -3056,11 +3385,11 @@ class App:
                 messagebox.showerror("Could not load pages", str(err))
                 return
             self.loaded_pages, self.loaded_source = pages, c["database"].strip()
-            self.pages_list.delete(0, tk.END)
+            labels = []
             for p in pages:
                 f = page_fields(p)
-                self.pages_list.insert(tk.END, f"{f['date'] or '—'}   {f['title']}")
-            self.pages_list.select_set(0, tk.END)
+                labels.append(f"{f['date'] or '—'}   {f['title']}")
+            self.pages_list.set_items(labels)
             self.append_log(f"Loaded {len(pages)} pages. Deselect the ones you don't want.")
 
         self.bg(lambda: Exporter(c).fetch_roots(), done)
@@ -3104,10 +3433,7 @@ class App:
             self.V["icon_custom_file"].set(p)
 
     def select_pages(self, all_):
-        if all_:
-            self.pages_list.select_set(0, tk.END)
-        else:
-            self.pages_list.select_clear(0, tk.END)
+        self.pages_list.select_all(all_)
 
     def on_close(self):
         try:
@@ -3116,334 +3442,461 @@ class App:
             pass
         self.root.destroy()
 
+    # ---- layout helpers ----
+    def page(self, title):
+        sf = ScrollFrame(self.nb)
+        self.nb.add(sf, text=title)
+        return sf.inner
+
+    def group(self, parent, title):
+        g = ttk.LabelFrame(parent, text=" " + title + " ", padding=(12, 8))
+        g.pack(fill="x", padx=12, pady=(8, 2))
+        g.columnconfigure(1, weight=1)
+        g._r = 0
+        return g
+
+    def field(self, g, label, widget, hint=None):
+        r = g._r
+        ttk.Label(g, text=label).grid(row=r, column=0, sticky="ne", padx=(0, 12), pady=4)
+        narrow = isinstance(widget, (ttk.Button, ttk.Spinbox)) or getattr(widget, "_narrow", False)
+        widget.grid(row=r, column=1, sticky="w" if narrow else "we", pady=4)
+        r += 1
+        if hint:
+            ttk.Label(g, text=hint, style="Hint.TLabel", wraplength=540, justify="left").grid(
+                row=r, column=1, sticky="w", pady=(0, 4))
+            r += 1
+        g._r = r
+
+    def tick(self, g, key, text, hint=None):
+        ttk.Checkbutton(g, text=text, variable=self.V[key]).grid(
+            row=g._r, column=0, columnspan=2, sticky="w", pady=2)
+        g._r += 1
+        if hint:
+            ttk.Label(g, text=hint, style="Hint.TLabel", wraplength=540, justify="left").grid(
+                row=g._r, column=0, columnspan=2, sticky="w", padx=(24, 0), pady=(0, 4))
+            g._r += 1
+
+    def note(self, g, text, var=None):
+        lab = ttk.Label(g, text=text, textvariable=var, style="Hint.TLabel", wraplength=560, justify="left")
+        lab.grid(row=g._r, column=0, columnspan=2, sticky="w", pady=(0, 4))
+        g._r += 1
+        return lab
+
+    def spin(self, parent, key, lo, hi, inc=1, w=8):
+        return ttk.Spinbox(parent, from_=lo, to=hi, increment=inc, textvariable=self.V[key], width=w)
+
+    def _on_wheel(self, e):
+        """One global mouse-wheel handler: scrolls the list under the cursor, else the page."""
+        w = e.widget
+        if isinstance(w, str):
+            return None
+        try:
+            if w.winfo_toplevel() is not self.root or w.winfo_class() == "Text":
+                return None
+        except Exception:
+            return None
+        num = getattr(e, "num", 0)
+        if num == 4:
+            steps = -1
+        elif num == 5:
+            steps = 1
+        else:
+            d = getattr(e, "delta", 0)
+            steps = (-d if sys.platform == "darwin" else -int(d / 120)) or (-1 if d > 0 else 1)
+        while w is not None:
+            cv = getattr(w, "_wheel_canvas", None)
+            if cv is not None:
+                lo, hi = cv.yview()
+                if (steps < 0 and lo > 0.0) or (steps > 0 and hi < 1.0):
+                    cv.yview_scroll(steps * 3, "units")
+                    return "break"
+            w = getattr(w, "master", None)
+        return None
+
+    def _wheel_block(self, e):
+        self._on_wheel(e)
+        return "break"          # comboboxes / spinboxes must not change value while scrolling
+
+    def font_field(self, g, label, key, allow_same=False, hint=None):
+        fr = ttk.Frame(g)
+        ent = ttk.Entry(fr, textvariable=self.V[key])
+        ent.pack(side="left", fill="x", expand=True)
+
+        def refresh(*_):
+            name = self.V[key].get()
+            fam = _GENERIC_FONT_ALIAS.get(name, name)
+            try:
+                ent.config(font=(fam, 12) if fam in self.installed or fam in _GENERIC_FONT_ALIAS.values()
+                           else "TkDefaultFont")
+            except Exception:
+                pass
+
+        def choose():
+            FontPicker(self, self.V[key].get(), allow_same, lambda n: self.V[key].set(n))
+
+        ttk.Button(fr, text="Choose font…", command=choose).pack(side="left", padx=(6, 0))
+        self.V[key].trace_add("write", refresh)
+        refresh()
+        self.field(g, label, fr, hint)
+
+    def show_about(self):
+        messagebox.showinfo(
+            f"About {APP_NAME}",
+            f"{APP_NAME}\nVersion {APP_VERSION}  ({APP_STAGE})\n\n"
+            "This is a BETA release: all main features work, but it is still new and being tested.\n"
+            "Bugs are expected. Please keep a copy of important data, and report problems "
+            "together with the text from the log box at the bottom of the window.")
+
+    def apply_preset(self, *_):
+        preset = STYLE_PRESETS.get(self.V["theme_preset"].get())
+        if preset:
+            for k, v in preset.items():
+                self.V[k].set(v)
+
+    def pick_color(self):
+        cur = self.V["accent_color"].get()
+        rgb, hexv = colorchooser.askcolor(color=cur if _HEX_RE.match(cur or "") else "#37352f",
+                                          title="Accent color (headings, links, quote bars)")
+        if hexv:
+            self.V["accent_color"].set(hexv)
+
+    def update_swatch(self, *_):
+        try:
+            self.swatch.config(bg=self.V["accent_color"].get())
+        except Exception:
+            pass
+
+    def update_summary(self, *_):
+        try:
+            fm = [FORMAT_LABELS[k] for k in FORMATS + ["images"] if self.V["fmt_" + k].get()]
+            out = self.V["save_dir"].get().strip() or "(choose an output folder in tab 8)"
+            self.summary.set("Will export: " + (", ".join(fm) if fm else "nothing selected (tab 3)") +
+                             "   →   " + out)
+        except Exception:
+            pass
+
     # ---- layout ----
     def build(self):
-        V       = self.V
-        self.nb = ttk.Notebook(self.root)
-        ttk.Style().configure("TNotebook.Tab", padding=(8, 3))
+        V = self.V
+        style = ttk.Style()
+        try:
+            if sys.platform.startswith("win"):
+                style.theme_use("vista")
+            base = tkfont.nametofont("TkDefaultFont")
+            base.configure(size=10, family="Segoe UI" if sys.platform.startswith("win") else base.actual("family"))
+            tkfont.nametofont("TkTextFont").configure(size=10)
+        except Exception:
+            pass
+        style.configure("Hint.TLabel", foreground="#6b7280", font=("", 9))
+        style.configure("Head.TLabel", font=("", 15, "bold"))
+        style.configure("Accent.TButton", font=("", 11, "bold"), padding=(18, 7))
+        style.configure("TNotebook.Tab", padding=(11, 6))
 
-        # ══════════════════════════════════════════════════════════
-        # Tab: Source
-        # ══════════════════════════════════════════════════════════
-        t = self.tab("Source")
-        self.token_entry = ttk.Entry(t, textvariable=V["token"], show="•")
-        self.row(t, 0, "Notion token", self.token_entry)
+        # ---- header ----
+        head = ttk.Frame(self.root)
+        head.pack(fill="x", padx=14, pady=(10, 0))
+        try:
+            from PIL import Image, ImageTk
+            for ext in (".png", ".ico"):
+                ip = resource_path("icon" + ext)
+                if ip.exists():
+                    self._hdr_icon = ImageTk.PhotoImage(Image.open(str(ip)).convert("RGBA").resize((40, 40), Image.LANCZOS))
+                    ttk.Label(head, image=self._hdr_icon).pack(side="left", padx=(0, 10))
+                    break
+        except Exception:
+            pass
+        tf = ttk.Frame(head)
+        tf.pack(side="left")
+        tr = ttk.Frame(tf)
+        tr.pack(anchor="w")
+        ttk.Label(tr, text=APP_NAME, style="Head.TLabel").pack(side="left")
+        tk.Label(tr, text=f" {APP_STAGE} ", bg="#f59e0b", fg="white", font=("", 8, "bold")).pack(
+            side="left", padx=8)
+        ttk.Label(tf, text="Follow the tabs 1 → 8, then press Export.  Only tabs 1 and 8 are required.",
+                  style="Hint.TLabel").pack(anchor="w")
+
+        ttk.Button(head, text="About / Beta", command=self.show_about).pack(side="right")
+        self.nb = ttk.Notebook(self.root)
+        self.root.bind_all("<MouseWheel>", self._on_wheel)
+        self.root.bind_all("<Button-4>", self._on_wheel)
+        self.root.bind_all("<Button-5>", self._on_wheel)
+        for cls in ("TCombobox", "TSpinbox"):
+            self.root.bind_class(cls, "<MouseWheel>", self._wheel_block)
+            self.root.bind_class(cls, "<Button-4>", self._wheel_block)
+            self.root.bind_class(cls, "<Button-5>", self._wheel_block)
+
+        # ═══════════════ 1 · Source ═══════════════
+        t = self.page("1  Source")
+        g = self.group(t, "Notion connection")
+        self.token_entry = ttk.Entry(g, textvariable=V["token"], show="•")
+        self.field(g, "Integration token", self.token_entry,
+                   "Create one at notion.so/my-integrations, then in Notion open your page → ••• → "
+                   "Connections → add your integration.")
         self.show_token = tk.BooleanVar(value=False)
-        o = ttk.Frame(t)
+        o = ttk.Frame(g)
         ttk.Checkbutton(o, text="Show token", variable=self.show_token,
                         command=lambda: self.token_entry.config(show="" if self.show_token.get() else "•")
                         ).pack(side="left")
-        self.check(o, "remember_token", "Remember token on this PC (plain text)").pack(side="left", padx=10)
-        self.row(t, 1, "", o)
-        self.row(t, 2, "Database / page ID or URL", ttk.Entry(t, textvariable=V["database"]))
-        self.row(t, 3, "Source type", self.combo(t, "source_type", SOURCE_TYPES))
-        ttk.Label(t, text="Several IDs/URLs can be separated by spaces or commas.",
-                  foreground="#666").grid(row=4, column=1, sticky="w", padx=8)
-        lr = ttk.Frame(t)
-        self.check(lr, "use_login", "Use saved Notion login (Browser engine / private pages)").pack(side="left")
-        self.login_btn = ttk.Button(lr, text="Log in to Notion", command=self.do_login)
-        self.login_btn.pack(side="left", padx=10)
-        self.row(t, 5, "Browser", lr)
-        ttk.Button(t, text="Load properties", command=self.load_props).grid(
-            row=6, column=1, sticky="w", padx=8, pady=6)
-        lf = ttk.Frame(t)
-        self.props_list = tk.Listbox(lf, selectmode=tk.MULTIPLE, exportselection=False, height=9)
-        sb = ttk.Scrollbar(lf, command=self.props_list.yview)
-        self.props_list.config(yscrollcommand=sb.set)
-        self.props_list.pack(side="left", fill="both", expand=True)
-        sb.pack(side="right", fill="y")
-        self.row(t, 7, "Properties to show\n(none loaded = all)", lf)
+        ttk.Checkbutton(o, text="Remember on this PC (saved as plain text)",
+                        variable=V["remember_token"]).pack(side="left", padx=14)
+        ttk.Button(o, text="Open integrations page ↗",
+                   command=lambda: webbrowser.open("https://www.notion.so/my-integrations")).pack(side="left")
+        self.field(g, "", o)
 
-        # ══════════════════════════════════════════════════════════
-        # Tab: Pages
-        # ══════════════════════════════════════════════════════════
-        t = self.tab("Pages")
-        self.row(t, 0, "File name format", ttk.Entry(t, textvariable=V["name_format"]))
-        pre = ttk.Combobox(t, values=NAME_PRESETS, state="readonly")
-        pre.bind("<<ComboboxSelected>>", lambda e: V["name_format"].set(pre.get()))
-        self.row(t, 1, "Presets", pre)
-        self.hint = tk.StringVar(value="Placeholders: {title} {date} {index} {created} {edited} {parent}\n"
-                                       "Click 'Load properties' to list your own.\n"
-                                       "Formats: {date:%d-%m-%Y}   {title:40} (truncate)")
-        ttk.Label(t, textvariable=self.hint, foreground="#666", wraplength=560, justify="left").grid(
-            row=2, column=1, sticky="w", padx=8)
-        ttk.Button(t, text="Preview names", command=self.preview_names).grid(
-            row=3, column=1, sticky="w", padx=8, pady=4)
-        sr = ttk.Frame(t)
+        g = self.group(t, "What to export")
+        self.field(g, "Database / page link", ttk.Entry(g, textvariable=V["database"]),
+                   "Paste the Notion link (or ID). To export several, separate links with spaces or commas.")
+        self.field(g, "It is a…", self.combo(g, "source_type", SOURCE_TYPES, width=18),
+                   "Leave on Auto-detect unless the app guesses wrong.")
+
+        g = self.group(t, "Private pages — Browser PDF engine only")
+        self.tick(g, "use_login", "Use my saved Notion login",
+                  "Only needed when the PDF engine is set to “Browser”. The default API engine does not need this.")
+        self.login_btn = ttk.Button(g, text="Log in to Notion…", command=self.do_login)
+        self.field(g, "", self.login_btn, "A browser window opens: sign in, then close the window.")
+
+        # ═══════════════ 2 · Pages ═══════════════
+        t = self.page("2  Pages")
+        g = self.group(t, "Choose which pages")
+        pr = ttk.Frame(g)
+        ttk.Button(pr, text="Load pages", command=self.load_pages).pack(side="left")
+        ttk.Button(pr, text="Select all", command=lambda: self.select_pages(True)).pack(side="left", padx=6)
+        ttk.Button(pr, text="Clear", command=lambda: self.select_pages(False)).pack(side="left")
+        self.field(g, "Page list", pr, "Optional. If you never press “Load pages”, every page is exported. "
+                                       "After loading, only ticked pages are exported.")
+        self.pages_list = CheckList(g, height=210, empty_text="Press “Load pages” to see your pages here.")
+        self.field(g, "", self.pages_list)
+        self.field(g, "", ttk.Label(g, textvariable=self.pages_list.info, style="Hint.TLabel"))
+
+        g = self.group(t, "Order & filter")
+        sr = ttk.Frame(g)
         self.sort_combo = ttk.Combobox(sr, textvariable=V["sort_by"], values=SORT_BUILTIN, width=22)
         self.sort_combo.pack(side="left")
-        self.check(sr, "sort_desc", "Descending").pack(side="left", padx=10)
-        self.row(t, 4, "Sort by", sr)
-        fr = ttk.Frame(t)
+        ttk.Checkbutton(sr, text="Descending", variable=V["sort_desc"]).pack(side="left", padx=10)
+        self.field(g, "Sort by", sr)
+        fr = ttk.Frame(g)
         self.filter_combo = ttk.Combobox(fr, textvariable=V["filter_prop"], width=16)
         self.filter_combo.pack(side="left")
         ttk.Combobox(fr, textvariable=V["filter_op"], values=["contains", "does not contain", "equals"],
                      state="readonly", width=15).pack(side="left", padx=4)
         ttk.Entry(fr, textvariable=V["filter_value"], width=18).pack(side="left")
-        self.row(t, 5, "Only pages where", fr)
-        self.row(t, 6, "Max pages (0 = all)",
-                 ttk.Spinbox(t, from_=0, to=100000, textvariable=V["max_pages"], width=8))
-        pr = ttk.Frame(t)
-        ttk.Button(pr, text="Load pages", command=self.load_pages).pack(side="left")
-        ttk.Button(pr, text="Select all", command=lambda: self.select_pages(True)).pack(side="left", padx=4)
-        ttk.Button(pr, text="Clear", command=lambda: self.select_pages(False)).pack(side="left")
-        self.row(t, 7, "Choose pages", pr)
-        pf = ttk.Frame(t)
-        self.pages_list = tk.Listbox(pf, selectmode=tk.MULTIPLE, exportselection=False, height=9)
-        sb2 = ttk.Scrollbar(pf, command=self.pages_list.yview)
-        self.pages_list.config(yscrollcommand=sb2.set)
-        self.pages_list.pack(side="left", fill="both", expand=True)
-        sb2.pack(side="right", fill="y")
-        self.row(t, 8, "(none selected = all)", pf)
+        self.field(g, "Only pages where", fr, "Leave empty for no filter.")
+        self.field(g, "Max pages", self.spin(g, "max_pages", 0, 100000), "0 = no limit.")
 
-        # ══════════════════════════════════════════════════════════
-        # Tab: Formats
-        # ══════════════════════════════════════════════════════════
-        t  = self.tab("Formats")
-        ff = ttk.Frame(t)
-        for k in FORMATS + ["images"]:
-            self.check(ff, "fmt_" + k, FORMAT_LABELS[k]).pack(side="left", padx=4)
-        self.row(t, 0, "Export as", ff)
-        self.row(t, 1, "PDF engine", self.combo(t, "engine", ENGINES))
-        ttk.Label(t, text="API: built from page data; no login, hides properties exactly, works for all formats.\n"
-                           "Browser: prints the real Notion page (needs login for private pages).",
-                  foreground="#666", justify="left").grid(row=2, column=1, sticky="w", padx=8)
-        self.row(t, 3, "Sub-pages", self.combo(t, "sub_mode", SUB_MODES))
-        self.row(t, 4, "Sub-page depth",
-                 ttk.Spinbox(t, from_=1, to=10, textvariable=V["sub_depth"], width=8))
-        self.check(t, "sub_dbs", "Separate files: also export rows of databases inside pages").grid(
-            row=5, column=1, sticky="w", padx=8, pady=3)
-        self.check(t, "combine", "Also create one combined HTML / Markdown / LaTeX file").grid(
-            row=6, column=1, sticky="w", padx=8, pady=3)
-        ttk.Label(t, text="Inline sub-pages need the API engine or non-PDF formats.",
-                  foreground="#666").grid(row=7, column=1, sticky="w", padx=8)
+        g = self.group(t, "File names")
+        self.field(g, "Name format", ttk.Entry(g, textvariable=V["name_format"]))
+        pre = ttk.Combobox(g, values=NAME_PRESETS, state="readonly")
+        pre.bind("<<ComboboxSelected>>", lambda e: V["name_format"].set(pre.get()))
+        self.field(g, "Examples", pre)
+        self.hint = tk.StringVar(value="Placeholders: {title} {date} {index} {created} {edited} {parent}\n"
+                                       "Click “Load properties” (tab 4) to list your own.\n"
+                                       "Formats: {date:%d-%m-%Y}   {title:40} (truncate)")
+        self.note(g, "", self.hint)
+        self.field(g, "", ttk.Button(g, text="Preview names", command=self.preview_names))
 
-        # ══════════════════════════════════════════════════════════
-        # Tab: LaTeX & OCR
-        # ══════════════════════════════════════════════════════════
-        t = self.tab("LaTeX & OCR")
+        # ═══════════════ 3 · Formats ═══════════════
+        t = self.page("3  Formats")
+        g = self.group(t, "Export as (tick one or more)")
+        ff = ttk.Frame(g)
+        for n, k in enumerate(FORMATS + ["images"]):
+            ttk.Checkbutton(ff, text=FORMAT_LABELS[k], variable=V["fmt_" + k]).grid(
+                row=n // 4, column=n % 4, sticky="w", padx=(0, 22), pady=3)
+        self.field(g, "Formats", ff)
+        g = self.group(t, "PDF engine")
+        self.field(g, "Engine", self.combo(g, "engine", ENGINES),
+                   "API = fast, no login, uses your Design tab settings (fonts, colors…).\n"
+                   "Browser = prints the real Notion page (slower; needs login for private pages; "
+                   "ignores Design settings).")
+        g = self.group(t, "Sub-pages")
+        self.field(g, "Sub-pages", self.combo(g, "sub_mode", SUB_MODES),
+                   "Skip, put inside the parent page, or export each as its own file.")
+        self.field(g, "Depth", self.spin(g, "sub_depth", 1, 10), "How many levels of sub-pages to follow.")
+        self.tick(g, "sub_dbs", "Also export rows of databases inside pages (separate files mode)")
+        g = self.group(t, "Combined file")
+        self.tick(g, "combine", "Also create one combined HTML / Markdown / LaTeX file")
 
-        # ── Gemini API Key ──
-        self.section(t, 0, "Gemini Vision API Key (Multi-User Setup)")
-        ttk.Label(t, text="Each user uses their own Gemini API key. Keys are never shared or hardcoded,\n"
-                          "and are stored only in your local ~/.notion_pdf_exporter/config.json.",
-                  foreground="#555", justify="left").grid(row=2, column=1, sticky="w", padx=8, pady=(0, 4))
+        # ═══════════════ 4 · Design ═══════════════
+        t = self.page("4  Design")
+        g = self.group(t, "Quick style")
+        pc = ttk.Combobox(g, textvariable=V["theme_preset"], values=list(STYLE_PRESETS), state="readonly")
+        pc.bind("<<ComboboxSelected>>", self.apply_preset)
+        self.field(g, "Style preset", pc,
+                   "Picks fonts, spacing and colors in one click. You can still change every setting below.")
 
-        key_frame = ttk.Frame(t)
-        self.gemini_key_entry = ttk.Entry(key_frame, textvariable=V["gemini_api_key"], show="•", width=34)
+        g = self.group(t, "Fonts")
+        self.font_field(g, "Body font", "font_family", False,
+                        "Press “Choose font…” to see every font in its own style. Arabic: Cairo, Tajawal, Amiri…")
+        self.font_field(g, "Heading font", "heading_font", True)
+        self.tick(g, "web_fonts", "Download fonts from Google Fonts when needed (internet required)",
+                  "Fonts such as Inter, Lora, Playfair Display or Cairo are not on most PCs. Tick this to use them.")
+        self.field(g, "Font size (px)", self.spin(g, "base_font_size", 10, 28))
+        self.field(g, "Line spacing", self.spin(g, "line_spacing", 1.0, 3.0, 0.1))
+        self.field(g, "Text alignment", self.combo(g, "text_align", TEXT_ALIGNS, width=14))
+        self.field(g, "Title alignment", self.combo(g, "heading_align", HEAD_ALIGNS, width=14))
+
+        g = self.group(t, "Color")
+        cr = ttk.Frame(g)
+        ttk.Entry(cr, textvariable=V["accent_color"], width=10).pack(side="left")
+        self.swatch = tk.Label(cr, width=4, relief="solid", borderwidth=1)
+        self.swatch.pack(side="left", padx=6)
+        ttk.Button(cr, text="Choose…", command=self.pick_color).pack(side="left")
+        V["accent_color"].trace_add("write", self.update_swatch)
+        self.update_swatch()
+        self.field(g, "Accent color", cr, "Used for headings, links, quote bars and the title line.")
+
+        g = self.group(t, "Title area")
+        self.tick(g, "title_separator", "Show a colored line under the page title")
+        self.field(g, "Page icon", self.combo(g, "icon_mode", ICON_MODES, width=22))
+        icon_row = ttk.Frame(g)
+        ttk.Entry(icon_row, textvariable=V["icon_custom_file"]).pack(side="left", fill="x", expand=True)
+        ttk.Button(icon_row, text="Browse…", command=self.choose_icon_file).pack(side="left", padx=4)
+        self.field(g, "Custom icon file", icon_row, "Used only when “Custom icon file” is selected above.")
+        self.tick(g, "cover_page", "Cover page: title, icon and properties alone on page 1")
+
+        g = self.group(t, "Properties (database fields)")
+        self.field(g, "Layout", self.combo(g, "prop_layout", PROP_LAYOUTS, width=22),
+                   "Notion Table · Inline Pills · Minimalist List · Hidden")
+        self.field(g, "Date format", self.combo(g, "date_format_props", DATE_PRESETS, state="normal", width=22),
+                   "Or type any pattern, e.g. %d.%m.%Y")
+        self.field(g, "", ttk.Button(g, text="Load properties", command=self.load_props),
+                   "Load the list, then keep selected only the properties you want shown.")
+        self.props_list = CheckList(g, height=150, empty_text="Press “Load properties” first (all are shown until then).")
+        self.field(g, "Show these", self.props_list, "Untick the properties you do not want in the export.")
+        pb = ttk.Frame(g)
+        ttk.Button(pb, text="Tick all", command=lambda: self.props_list.select_all(True)).pack(side="left")
+        ttk.Button(pb, text="Untick all", command=lambda: self.props_list.select_all(False)).pack(side="left", padx=6)
+        ttk.Label(pb, textvariable=self.props_list.info, style="Hint.TLabel").pack(side="left", padx=8)
+        self.field(g, "", pb)
+
+        g = self.group(t, "Content")
+        self.tick(g, "render_math", "Render math equations nicely (KaTeX, internet required)",
+                  "Without internet, equations are shown as plain LaTeX text.")
+        self.tick(g, "expand_toggles", "Expand all toggle blocks")
+        self.field(g, "Links", self.combo(g, "links", LINK_MODES))
+        self.tick(g, "light_theme", "Force light theme  (Browser engine only)")
+        self.tick(g, "clean_layout", "Hide Notion sidebar / top bar  (Browser engine only)")
+        self.css_text = tk.Text(g, height=5, width=50)
+        self.css_text.insert("1.0", self.cfg0.get("custom_css", ""))
+        self.field(g, "Custom CSS", self.css_text, "For experts. Example: h1 { color: #c00; }")
+
+        # ═══════════════ 5 · Images ═══════════════
+        t = self.page("5  Images")
+        g = self.group(t, "Images inside documents")
+        self.field(g, "Handling", self.combo(g, "img_handling", IMG_MODES),
+                   "Notion image links expire after about an hour, so “Embed” or “Save locally” is safest.")
+        self.tick(g, "optimize_images", "Shrink big photos for PDF / Word (faster export, smaller files)")
+        self.field(g, "Max image size (px)", self.spin(g, "image_max_px", 600, 4000, 100, 8),
+                   "Saved image files are never changed — only the copy inside the PDF / Word file.")
+        g = self.group(t, "Image layout (PDF / HTML / Word)")
+        self.tick(g, "maximize_images", "Maximize images (full page width)")
+        self.tick(g, "one_image_per_page", "One image per page")
+        self.tick(g, "show_image_names", "Show image file names under images (when Notion has no caption)")
+        cf = ttk.Frame(g)
+        ttk.Combobox(cf, textvariable=V["caption_format"], values=CAPTION_FMTS, width=28).pack(side="left")
+        self.field(g, "Caption format", cf, "Placeholders: {name} {ext} {n} {original} {caption}")
+        g = self.group(t, "Saving image files  (tick “Images” in tab 3)")
+        self.field(g, "File name format", ttk.Entry(g, textvariable=V["img_format"]),
+                   "Placeholders: {page} {title} {n} {caption} {original} {date} {index} {parent}")
+        ip = ttk.Combobox(g, values=IMG_PRESETS, state="readonly")
+        ip.bind("<<ComboboxSelected>>", lambda e: V["img_format"].set(ip.get()))
+        self.field(g, "Examples", ip)
+        self.tick(g, "img_subfolder", "Put each page's images in its own folder")
+        self.tick(g, "img_cover", "Include page cover images ({n} = cover)")
+
+        # ═══════════════ 6 · PDF ═══════════════
+        t = self.page("6  PDF")
+        g = self.group(t, "Page")
+        self.field(g, "Page size", self.combo(g, "page_size", PAGE_SIZES, width=14))
+        self.field(g, "Orientation", self.combo(g, "orientation", ["Portrait", "Landscape"], width=14))
+        self.field(g, "Margin (mm)", self.spin(g, "margin_mm", 0, 50),
+                   "20 mm is comfortable for A4. Use 10 for denser pages.")
+        self.field(g, "Scale (%)", self.spin(g, "scale", 10, 200))
+        self.tick(g, "print_background", "Print background colors")
+        self.tick(g, "remove_blank_pages", "Automatically remove empty pages",
+                  "Deletes pages that contain no text, image or drawing (for example after a page break).")
+        g = self.group(t, "Page numbers")
+        self.tick(g, "page_numbers", "Add page numbers")
+        self.field(g, "Position", self.combo(g, "page_num_position", PAGENUM_POS, width=18))
+        self.field(g, "Format", self.combo(g, "page_num_format", PAGENUM_FMT, width=18))
+
+        # ═══════════════ 7 · LaTeX & AI ═══════════════
+        t = self.page("7  LaTeX & AI")
+        g = self.group(t, "LaTeX (.tex)")
+        self.tick(g, "fmt_tex", "Export as LaTeX (.tex) document",
+                  "Images are written as comments in the .tex for now. Compile with pdflatex "
+                  "(xelatex for Arabic).")
+        cb = ttk.Frame(g)
+        ttk.Button(cb, text="📋 Copy last exported LaTeX", command=self.copy_latex).pack(side="left")
+        self.field(g, "Clipboard", cb)
+        g = self.group(t, "Gemini Math OCR — whiteboard photos → LaTeX")
+        self.note(g, "Each user enters their own key. It is stored only in your local "
+                     "~/.notion_pdf_exporter/config.json.")
+        kf = ttk.Frame(g)
+        self.gemini_key_entry = ttk.Entry(kf, textvariable=V["gemini_api_key"], show="•")
         self.gemini_key_entry.pack(side="left", fill="x", expand=True)
         self.show_gemini_key = tk.BooleanVar(value=False)
-        ttk.Checkbutton(key_frame, text="Show", variable=self.show_gemini_key,
-                        command=lambda: self.gemini_key_entry.config(show="" if self.show_gemini_key.get() else "•")
-                        ).pack(side="left", padx=6)
-        ttk.Button(key_frame, text="Save Key", command=self.save_gemini_key).pack(side="left", padx=4)
-        ttk.Button(key_frame, text="Get Free Key ↗", command=lambda: webbrowser.open("https://aistudio.google.com/")).pack(side="left", padx=4)
-        self.row(t, 3, "Gemini API Key", key_frame)
+        ttk.Checkbutton(kf, text="Show", variable=self.show_gemini_key,
+                        command=lambda: self.gemini_key_entry.config(
+                            show="" if self.show_gemini_key.get() else "•")).pack(side="left", padx=6)
+        ttk.Button(kf, text="Save", command=self.save_gemini_key).pack(side="left")
+        ttk.Button(kf, text="Get free key ↗",
+                   command=lambda: webbrowser.open("https://aistudio.google.com/")).pack(side="left", padx=6)
+        self.field(g, "Gemini API key", kf)
+        self.tick(g, "gemini_math_ocr", "Scan images with Gemini Math OCR")
+        self.field(g, "Model", self.combo(g, "gemini_model", GEMINI_MODELS, state="normal"),
+                   "You can type any Gemini model name here.")
+        self.tick(g, "keep_whiteboard_image", "Keep a note of the original image below the transcription")
 
-        # ── Math OCR Options ──
-        self.section(t, 4, "Math OCR for University Whiteboards")
-        self.check(t, "gemini_math_ocr",
-                   "Scan images with Gemini Math OCR (convert whiteboard photos to LaTeX)").grid(
-            row=6, column=1, sticky="w", padx=8, pady=2)
-
-        self.row(t, 7, "Gemini Model",
-                 self.combo(t, "gemini_model", GEMINI_MODELS, state="normal"))
-
-        self.check(t, "keep_whiteboard_image",
-                   "Keep original whiteboard image below transcribed LaTeX").grid(
-            row=8, column=1, sticky="w", padx=8, pady=2)
-
-        ttk.Label(t, text="Smart Whiteboard OCR features:\n"
-                          "• Logical flow reconstruction (columns, arrows, side-box remarks)\n"
-                          "• Cleans smudges, eraser marks, and crossed-out mistakes\n"
-                          "• Fixes ambiguous handwriting (x vs \\times, 0 vs O, \\partial vs 2)\n"
-                          "• Formats standard amsmath/amsthm (align*, equation*, cases, pmatrix, Proof)",
-                  foreground="#666", justify="left").grid(row=9, column=1, sticky="w", padx=8, pady=(4, 8))
-
-        # ── LaTeX Document Options ──
-        self.section(t, 10, "LaTeX Export (.tex)")
-        self.check(t, "fmt_tex", "Export as LaTeX (.tex) document").grid(
-            row=12, column=1, sticky="w", padx=8, pady=2)
-        copy_box = ttk.Frame(t)
-        ttk.Button(copy_box, text="📋 Copy Last Exported LaTeX to Clipboard", command=self.copy_latex).pack(side="left")
-        self.row(t, 13, "Clipboard", copy_box)
-
-        # ══════════════════════════════════════════════════════════
-        # Tab: Images
-        # ══════════════════════════════════════════════════════════
-        t = self.tab("Images")
-        self.row(t, 0, "Images in documents", self.combo(t, "img_handling", IMG_MODES))
-        ttk.Label(t, text="Notion image links expire after about an hour, so 'Embed' or 'Save locally' is safer.",
-                  foreground="#666", wraplength=520, justify="left").grid(
-            row=1, column=1, sticky="w", padx=8)
-        self.row(t, 2, "Image name format", ttk.Entry(t, textvariable=V["img_format"]))
-        ip = ttk.Combobox(t, values=IMG_PRESETS, state="readonly")
-        ip.bind("<<ComboboxSelected>>", lambda e: V["img_format"].set(ip.get()))
-        self.row(t, 3, "Presets", ip)
-        ttk.Label(t, text="Placeholders: {page} {title} {n} {caption} {original} {date} {index} {parent} "
-                           "+ any property.\nTick 'Images' on the Formats tab to export image files.",
-                  foreground="#666", wraplength=520, justify="left").grid(
-            row=4, column=1, sticky="w", padx=8)
-        self.check(t, "img_subfolder", "Put each page's images in its own folder").grid(
-            row=5, column=1, sticky="w", padx=8, pady=3)
-        self.check(t, "img_cover", "Include page cover images ({n} = cover)").grid(
-            row=6, column=1, sticky="w", padx=8, pady=3)
-
-        # ── Image layout section ──
-        self.section(t, 7, "Image Layout (PDF / HTML / Word)")
-        self.check(t, "maximize_images",
-                   "Maximize images (full page width)").grid(
-            row=9, column=1, sticky="w", padx=8, pady=2)
-        self.check(t, "one_image_per_page",
-                   "One image per page (insert page break after each image)").grid(
-            row=10, column=1, sticky="w", padx=8, pady=2)
-        self.check(t, "show_image_names",
-                   "Display image filenames below images (when no Notion caption)").grid(
-            row=11, column=1, sticky="w", padx=8, pady=2)
-        cf_row = ttk.Frame(t)
-        cap_combo = ttk.Combobox(cf_row, textvariable=V["caption_format"],
-                                 values=CAPTION_FMTS, width=28)
-        cap_combo.pack(side="left")
-        ttk.Label(cf_row, text="  {name} {ext} {n} {original} {caption}",
-                  foreground="#888").pack(side="left")
-        self.row(t, 12, "Caption format", cf_row)
-
-        # ══════════════════════════════════════════════════════════
-        # Tab: Styling  (NEW)
-        # ══════════════════════════════════════════════════════════
-        t = self.tab("Styling")
-
-        # ── Typography ──
-        ttk.Label(t, text="Typography", font=("", 9, "bold"), foreground="#444").grid(
-            row=0, column=0, columnspan=2, sticky="w", padx=8, pady=(8, 2))
-        self.row(t, 1, "Font family", self.combo(t, "font_family", FONT_FAMILIES))
-        self.row(t, 2, "Base font size (px)",
-                 ttk.Spinbox(t, from_=10, to=28, textvariable=V["base_font_size"], width=8))
-        self.row(t, 3, "Line spacing",
-                 ttk.Spinbox(t, from_=1.0, to=3.0, increment=0.1,
-                             textvariable=V["line_spacing"], width=8))
-        self.row(t, 4, "Text alignment", self.combo(t, "text_align", TEXT_ALIGNS))
-
-        # ── Headings ──
-        self.section(t, 5, "Page Heading")
-        self.row(t, 7, "Heading alignment", self.combo(t, "heading_align", HEAD_ALIGNS))
-        self.check(t, "title_separator",
-                   "Show separator line under page title").grid(
-            row=8, column=1, sticky="w", padx=8, pady=2)
-
-        # ── Page Icon ──
-        self.section(t, 9, "Page Icon / Emoji")
-        self.row(t, 11, "Icon mode", self.combo(t, "icon_mode", ICON_MODES))
-        icon_row = ttk.Frame(t)
-        ttk.Entry(icon_row, textvariable=V["icon_custom_file"], width=36).pack(side="left")
-        ttk.Button(icon_row, text="Browse…", command=self.choose_icon_file).pack(side="left", padx=4)
-        self.row(t, 12, "Custom icon file", icon_row)
-        ttk.Label(t, text="Custom file is used when 'Custom icon file' mode is selected.",
-                  foreground="#888").grid(row=13, column=1, sticky="w", padx=8)
-
-        # ── Cover page ──
-        self.section(t, 14, "Cover / Header Page")
-        self.check(t, "cover_page",
-                   "Create dedicated cover/header page (title + icon + properties only on page 1)").grid(
-            row=16, column=1, sticky="w", padx=8, pady=2)
-
-        # ══════════════════════════════════════════════════════════
-        # Tab: Properties  (NEW)
-        # ══════════════════════════════════════════════════════════
-        t = self.tab("Properties")
-        ttk.Label(t, text="Property Display", font=("", 9, "bold"), foreground="#444").grid(
-            row=0, column=0, columnspan=2, sticky="w", padx=8, pady=(8, 2))
-        self.row(t, 1, "Layout style", self.combo(t, "prop_layout", PROP_LAYOUTS))
-        ttk.Label(t, text="Notion Table – clean two-column grid under the title\n"
-                           "Inline Pills – compact horizontal tags/badges\n"
-                           "Minimalist List – subtle key/value lines\n"
-                           "Hidden – exclude properties from body",
-                  foreground="#666", justify="left").grid(row=2, column=1, sticky="w", padx=8)
-
-        self.section(t, 3, "Date Formatting")
-        self.row(t, 5, "Property date format",
-                 self.combo(t, "date_format_props", DATE_PRESETS, state="normal"))
-        ttk.Label(t, text="Presets: YYYY-MM-DD, DD/MM/YYYY, MMM DD YYYY, Relative…\n"
-                           "Or enter any strftime pattern, e.g. %d.%m.%Y",
-                  foreground="#666", justify="left").grid(row=6, column=1, sticky="w", padx=8)
-
-        # ══════════════════════════════════════════════════════════
-        # Tab: Content
-        # ══════════════════════════════════════════════════════════
-        t = self.tab("Content")
-        self.check(t, "expand_toggles", "Expand all toggles").grid(
-            row=0, column=1, sticky="w", padx=8, pady=3)
-        self.check(t, "light_theme", "Force light theme (Browser engine)").grid(
-            row=1, column=1, sticky="w", padx=8, pady=3)
-        self.check(t, "clean_layout", "Hide Notion sidebar / top bar (Browser engine)").grid(
-            row=2, column=1, sticky="w", padx=8, pady=3)
-        self.row(t, 3, "Links", self.combo(t, "links", LINK_MODES))
-        self.css_text = tk.Text(t, height=8, width=50)
-        self.css_text.insert("1.0", self.cfg0.get("custom_css", ""))
-        self.row(t, 4, "Custom CSS\n(optional)", self.css_text)
-        ttk.Label(t, text="Applies to HTML / API-PDF output. Example: h1 { color: #c00; }",
-                  foreground="#666").grid(row=5, column=1, sticky="w", padx=8)
-
-        # ══════════════════════════════════════════════════════════
-        # Tab: PDF
-        # ══════════════════════════════════════════════════════════
-        t = self.tab("PDF")
-        self.row(t, 0, "Page size", self.combo(t, "page_size", PAGE_SIZES))
-        self.row(t, 1, "Orientation", self.combo(t, "orientation", ["Portrait", "Landscape"]))
-        self.row(t, 2, "Margin (mm)",
-                 ttk.Spinbox(t, from_=0, to=50, textvariable=V["margin_mm"], width=8))
-        self.row(t, 3, "Scale (%)",
-                 ttk.Spinbox(t, from_=10, to=200, textvariable=V["scale"], width=8))
-        self.check(t, "print_background", "Print background colors").grid(
-            row=4, column=1, sticky="w", padx=8, pady=3)
-        self.check(t, "page_numbers", "Add page numbers").grid(
-            row=5, column=1, sticky="w", padx=8, pady=3)
-        self.row(t, 6, "Page number position",
-                 self.combo(t, "page_num_position", PAGENUM_POS))
-        self.row(t, 7, "Page number format",
-                 self.combo(t, "page_num_format", PAGENUM_FMT))
-
-        # ══════════════════════════════════════════════════════════
-        # Tab: Output
-        # ══════════════════════════════════════════════════════════
-        t    = self.tab("Output")
-        orow = ttk.Frame(t)
+        # ═══════════════ 8 · Output ═══════════════
+        t = self.page("8  Output")
+        g = self.group(t, "Where to save")
+        orow = ttk.Frame(g)
         ttk.Entry(orow, textvariable=V["save_dir"]).pack(side="left", fill="x", expand=True)
-        ttk.Button(orow, text="Browse", command=self.choose_folder).pack(side="left", padx=4)
-        self.row(t, 0, "Output folder", orow)
-        self.row(t, 1, "PDF output", self.combo(t, "output_mode", OUTPUT_MODES))
-        self.row(t, 2, "Merged file name", ttk.Entry(t, textvariable=V["merged_name"]))
-        self.check(t, "bookmarks", "Add bookmarks to the merged PDF").grid(
-            row=3, column=1, sticky="w", padx=8, pady=3)
-        self.check(t, "skip_existing", "Skip files already exported (resume)").grid(
-            row=4, column=1, sticky="w", padx=8, pady=3)
-        self.row(t, 5, "Extra wait per page (s)\n(Browser engine)",
-                 ttk.Spinbox(t, from_=0, to=60, increment=0.5, textvariable=V["extra_wait"], width=8))
-        self.row(t, 6, "Retries on failure",
-                 ttk.Spinbox(t, from_=0, to=5, textvariable=V["retries"], width=8))
+        ttk.Button(orow, text="Browse…", command=self.choose_folder).pack(side="left", padx=4)
+        self.field(g, "Output folder  (required)", orow)
+        g = self.group(t, "PDF files")
+        self.field(g, "PDF output", self.combo(g, "output_mode", OUTPUT_MODES))
+        self.field(g, "Merged file name", ttk.Entry(g, textvariable=V["merged_name"]))
+        self.tick(g, "bookmarks", "Add bookmarks to the merged PDF")
+        g = self.group(t, "Speed & reliability")
+        self.field(g, "Parallel downloads", self.spin(g, "workers", 1, 8),
+                   "Pages and images are fetched in the background while the previous page is rendered. "
+                   "Notion limits requests (~3 per second), so more than 4 rarely helps.")
+        self.tick(g, "skip_existing", "Skip files already exported (resume an interrupted export)")
+        self.field(g, "Retries on failure", self.spin(g, "retries", 0, 5))
+        self.field(g, "Extra wait per page (s)", self.spin(g, "extra_wait", 0, 60, 0.5),
+                   "Browser engine only.")
 
-        # ══════════════════════════════════════════════════════════
-        # Run area (bottom bar)
-        # ══════════════════════════════════════════════════════════
+        # ---- bottom bar ----
         run = ttk.Frame(self.root)
-        self.export_btn = ttk.Button(run, text="▶  Export", command=self.start_export)
+        self.export_btn = ttk.Button(run, text="▶  Export", style="Accent.TButton", command=self.start_export)
         self.export_btn.pack(side="left")
-        self.cancel_btn = ttk.Button(run, text="✕  Cancel", command=self.cancel_export,
-                                     state="disabled")
-        self.cancel_btn.pack(side="left", padx=6)
-        self.copy_latex_btn = ttk.Button(run, text="📋 Copy LaTeX", command=self.copy_latex,
-                                         state="disabled")
-        self.copy_latex_btn.pack(side="left", padx=6)
+        self.cancel_btn = ttk.Button(run, text="Cancel", command=self.cancel_export, state="disabled")
+        self.cancel_btn.pack(side="left", padx=8)
+        self.copy_latex_btn = ttk.Button(run, text="📋 Copy LaTeX", command=self.copy_latex, state="disabled")
+        self.copy_latex_btn.pack(side="left")
         self.status = tk.StringVar()
         ttk.Label(run, textvariable=self.status).pack(side="right")
+        self.summary = tk.StringVar()
+        sumlab = ttk.Label(self.root, textvariable=self.summary, style="Hint.TLabel")
         self.bar = ttk.Progressbar(self.root, mode="determinate")
-        self.log_box = tk.Text(self.root, height=7, state="disabled", bg="#f7f7f7",
-                               relief="flat", borderwidth=1)
-        # bottom widgets first so Export/log never get cut off on small screens
-        self.log_box.pack(side="bottom", fill="x", padx=10, pady=4)
-        self.bar.pack(side="bottom", fill="x", padx=10, pady=2)
-        run.pack(side="bottom", fill="x", padx=10, pady=4)
-        self.nb.pack(side="top", fill="both", expand=True, padx=10, pady=(10, 4))
+        logf = ttk.Frame(self.root)
+        self.log_box = tk.Text(logf, height=10, state="disabled", bg="#f7f7f7", relief="flat",
+                               borderwidth=1, font=("Consolas" if sys.platform.startswith("win") else "Courier", 9),
+                               wrap="word")
+        lsb = ttk.Scrollbar(logf, command=self.log_box.yview)
+        self.log_box.config(yscrollcommand=lsb.set)
+        self.log_box.pack(side="left", fill="both", expand=True)
+        lsb.pack(side="right", fill="y")
+        logf.pack(side="bottom", fill="x", padx=12, pady=(2, 8))
+        self.bar.pack(side="bottom", fill="x", padx=12, pady=2)
+        run.pack(side="bottom", fill="x", padx=12, pady=4)
+        sumlab.pack(side="bottom", fill="x", padx=14)
+        self.nb.pack(side="top", fill="both", expand=True, padx=10, pady=(8, 4))
+        for k in FORMATS + ["images"]:
+            V["fmt_" + k].trace_add("write", self.update_summary)
+        V["save_dir"].trace_add("write", self.update_summary)
+        self.update_summary()
 
     def run(self):
         self.root.mainloop()

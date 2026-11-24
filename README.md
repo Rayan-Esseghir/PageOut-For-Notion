@@ -1,7 +1,11 @@
+<p align="center">
+  <img src="assets/banner.jpg" alt="PageOut for Notion" width="100%">
+</p>
+
 # PageOut for Notion
 
 Export Notion pages to **PDF, HTML, Markdown, Text, Word, JSON and LaTeX**, and save
-their **images with custom names**. Desktop app (Tkinter) · v5.1
+their **images with custom names**. Desktop app (Tkinter) · **v1.0.0-beta.1 (Beta)**
 
 ---
 
@@ -45,6 +49,40 @@ python notion_exporter.py
 1. Create an integration at <https://www.notion.so/my-integrations> and copy the **Internal Integration Token**.
 2. In Notion open your page or database → **…** → **Connections** → add your integration.
 3. Paste the token and the page/database URL into the app.
+
+---
+
+> ### ⚠️ Beta software
+> PageOut for Notion is in **Beta**: every main feature works, but the app is new and still being tested,
+> so you may run into bugs. Your Notion data is never modified (the app only reads it), but please keep
+> backups of anything important. If something goes wrong, copy the text from the log box at the bottom of
+> the window and report it.
+>
+> **Alpha vs Beta:** *Alpha* = early version, features missing or unstable, tested by the developer only.
+> *Beta* = feature-complete enough for real use, tested by real users, bugs are fixed before the final
+> **1.0.0** release.
+
+## What's new in the Beta
+
+- Tick-box lists for pages and properties, working mouse-wheel scrolling on every tab, bigger log window.
+- Font chooser that shows every font in its own typeface.
+- Output styled like Notion itself (typography, callouts, quotes, code, tables, lists, property rows).
+- Empty PDF pages are removed automatically (PDF tab). Default margin is now 20 mm.
+
+## Highlights
+
+- **8 guided tabs** (Source → Pages → Formats → Design → Images → PDF → LaTeX & AI → Output) with hints under every option.
+- **Style presets** and **45+ fonts** (any font installed on your PC, plus optional Google Fonts such as Inter, Lora, Cairo, Amiri). Arabic text flows right-to-left automatically.
+- **Prettier PDF/HTML**: accent color, nicer tables, callouts, code blocks, quotes, KaTeX math rendering.
+- **Faster export**: pages/images are fetched in parallel while the previous page renders; big photos are shrunk inside PDF/Word files.
+- LaTeX: images are written as `% [Image ...]` comments for now.
+
+## Changing the app icon
+
+1. Replace `icon.ico` (and `icon.png`) in the project folder.
+2. Delete the old `build`, `dist` folders and `PageOut-for-Notion.spec`.
+3. Run `.\build_exe.ps1` again.
+4. If Explorer still shows the old icon, it is Windows' icon cache: copy the exe to another folder or run `ie4uinit.exe -show`.
 
 ---
 
