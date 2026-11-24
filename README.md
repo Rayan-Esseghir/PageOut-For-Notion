@@ -1,7 +1,7 @@
 # PageOut for Notion
 
-Export Notion pages to **PDF, HTML, Markdown, Text, Word and JSON**, and save
-their **images with custom names**. Desktop app (Tkinter) · v4.
+Export Notion pages to **PDF, HTML, Markdown, Text, Word, JSON and LaTeX**, and save
+their **images with custom names**. Desktop app (Tkinter) · v5.1
 
 ---
 
@@ -10,7 +10,8 @@ their **images with custom names**. Desktop app (Tkinter) · v4.
 | Category | Details |
 |---|---|
 | **Sources** | Database, single page, or multiple URLs at once |
-| **Formats** | PDF, HTML, Markdown, Text, Word (.docx), JSON, raw Images |
+| **Formats** | PDF, HTML, Markdown, Text, Word (.docx), JSON, LaTeX (.tex), raw Images |
+| **Math OCR** | Optional Gemini Vision: whiteboard photos → LaTeX (your own API key) |
 | **PDF engines** | **API** (fast, no login) · **Browser** (pixel-perfect Notion look) |
 | **Properties** | Choose which properties to show; four layout styles |
 | **Naming** | File & image naming templates: `{date:%Y-%m-%d} {title:40}`, `{page}_{n}`, any property |
@@ -29,7 +30,7 @@ their **images with custom names**. Desktop app (Tkinter) · v4.
 ## Install (run as Python script)
 
 ```bash
-pip install notion-client playwright pypdf python-docx pillow
+pip install -r requirements.txt
 playwright install chromium
 python notion_exporter.py
 ```
@@ -44,6 +45,19 @@ python notion_exporter.py
 1. Create an integration at <https://www.notion.so/my-integrations> and copy the **Internal Integration Token**.
 2. In Notion open your page or database → **…** → **Connections** → add your integration.
 3. Paste the token and the page/database URL into the app.
+
+---
+
+## LaTeX & Gemini Math OCR
+
+Tick **LaTeX (.tex)** on the Formats tab. Output compiles with `pdflatex`
+(for Arabic/CJK text use `xelatex`). Emoji are removed automatically; images
+other than PNG/JPG/PDF are skipped with a comment.
+
+For whiteboard photos, open the **LaTeX & OCR** tab, paste your own Gemini key
+(<https://aistudio.google.com/>) and tick *Scan images with Gemini Math OCR*.
+The model name box is editable, so you can type any current Gemini model.
+The key is stored in plain text in `~/.notion_pdf_exporter/config.json`.
 
 ---
 
@@ -104,8 +118,7 @@ Or type any `strftime` pattern directly (e.g. `%d.%m.%Y`).
 
 ### Prerequisites
 ```powershell
-pip install pyinstaller pillow
-# (notion-client, playwright, pypdf, python-docx already installed)
+pip install -r requirements.txt pyinstaller
 ```
 
 ### Build with PowerShell (recommended)
@@ -121,7 +134,8 @@ build_exe.bat
 ```
 
 The output is `dist\PageOut-for-Notion.exe`.  
-Resource files (`icon.ico`, `icon.png`, `icon.jpg`) are automatically bundled.
+`icon.ico` is embedded as the exe icon and bundled for the window/taskbar icon.
+Use `.\build_exe.ps1 -Console` (or `build_exe.bat console`) for a debug build that shows errors.
 All settings and config are stored in `%USERPROFILE%\.notion_pdf_exporter\`.
 
 ### Playwright / Chromium and the .exe
@@ -133,7 +147,7 @@ The **Browser engine** (exact Notion look) requires Chromium:
 | Option | How |
 |---|---|
 | **Install on target PC** | `playwright install chromium` |
-| **Portable Chromium** | Copy the `~\.cache\ms-playwright` folder; before launch set `PLAYWRIGHT_BROWSERS_PATH=<parent folder>` |
+| **Portable Chromium** | Copy `~\AppData\Local\ms-playwright` next to the `.exe` and rename it `browsers` (auto-detected), or set `PLAYWRIGHT_BROWSERS_PATH` |
 
 > Bundling Chromium *inside* the `.exe` with `--add-binary` adds ~300 MB.
 > The build scripts intentionally skip this; use the portable-folder approach instead.
@@ -141,24 +155,11 @@ The **Browser engine** (exact Notion look) requires Chromium:
 ### Manual PyInstaller command
 
 ```powershell
-pyinstaller `
-  --onefile `
-  --windowed `
-  --name "PageOut-for-Notion" `
-  --icon icon.ico `
-  --add-data "icon.ico;." `
-  --add-data "icon.png;." `
-  --add-data "icon.jpg;." `
-  --hidden-import notion_client `
-  --hidden-import playwright `
-  --hidden-import playwright.sync_api `
-  --hidden-import pypdf `
-  --hidden-import docx `
-  --hidden-import PIL `
-  --hidden-import PIL.Image `
-  --hidden-import PIL.ImageDraw `
-  --hidden-import PIL.ImageFont `
-  --hidden-import PIL.ImageTk `
+python -m PyInstaller --noconfirm --clean --onefile --windowed `
+  --name PageOut-for-Notion --icon icon.ico `
+  --add-data "icon.ico;." --add-data "icon.png;." `
+  --collect-all playwright --collect-all google.genai --collect-data docx `
+  --hidden-import notion_client --hidden-import pypdf --hidden-import PIL.ImageTk `
   notion_exporter.py
 ```
 

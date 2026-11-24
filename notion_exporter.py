@@ -1,25 +1,25 @@
 """
-Notion Exporter (v4)  –  PageOut for Notion
+Notion Exporter (v5)  –  PageOut for Notion
 
 Install:
-    pip install notion-client playwright pypdf python-docx pillow
+    pip install notion-client playwright pypdf python-docx pillow google-genai
     playwright install chromium
 
 Exports Notion pages (from a database or single pages) to PDF, HTML,
-Markdown, Text, Word and JSON, and can save the images with custom names.
+Markdown, Text, Word, JSON and LaTeX (.tex), and can save the images
+with custom names.
 Two PDF engines: API (fast, no login, built from the page data) and
 Browser (prints the real Notion page).
 
-New in v4:
-  - Custom app icon (icon.ico / icon.png / icon.jpg / programmatic fallback)
-  - Notion-like CSS styling: clean typography, callout/quote/code blocks
-  - Page icon/emoji support in exports (show / hide / custom file)
-  - Dedicated cover/header page option
-  - Property layout styles: Notion Table / Inline Pills / Minimalist List / Hidden
-  - Expanded date & text formatting options
-  - Image options: maximize, one per page, show filenames, caption templates
-  - Page number position and format
-  - PyInstaller-safe resource paths
+New in v5:
+  - LaTeX (.tex) export with full compilable document wrapper
+  - Gemini Vision Math OCR: converts whiteboard/handwritten images to LaTeX
+    (requires a personal Gemini API key from https://aistudio.google.com/)
+  - Per-user API key stored only in ~/.notion_pdf_exporter/config.json
+  - Option to keep original whiteboard image below transcribed LaTeX
+  - "Copy LaTeX" button after export completes
+  - Smart whiteboard prompt: handles crowded boards, arrows, side-boxes,
+    crossed-out mistakes, amsmath/amsthm environments
 """
 import os
 import re
@@ -56,6 +56,15 @@ try:
 except ImportError:                                   # headless use / tests
     tk = None
 
+try:
+    from google import genai as _genai
+    from google.genai import types as _genai_types
+    _GENAI_AVAILABLE = True
+except ImportError:
+    _genai = None                                     # pip install google-genai
+    _genai_types = None
+    _GENAI_AVAILABLE = False
+
 
 # ----------------------------------------------------------------------
 # PyInstaller-safe resource path
@@ -68,6 +77,39 @@ def _resource_dir() -> Path:
 
 
 RESOURCE_DIR = _resource_dir()
+APP_NAME     = "PageOut for Notion"
+APP_VERSION  = "5.1"
+
+
+def _setup_portable_browsers():
+    """Frozen .exe: use a 'browsers' folder next to the exe as Playwright's Chromium location."""
+    if os.environ.get("PLAYWRIGHT_BROWSERS_PATH"):
+        return
+    if getattr(sys, "frozen", False):
+        exe_dir = Path(sys.executable).resolve().parent
+        for name in ("browsers", "ms-playwright"):
+            cand = exe_dir / name
+            if cand.is_dir():
+                os.environ["PLAYWRIGHT_BROWSERS_PATH"] = str(cand)
+                return
+
+
+def _windows_integration():
+    """Sharp UI on HiDPI screens + own taskbar identity (so the custom icon shows)."""
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+        try:
+            ctypes.windll.shcore.SetProcessDpiAwareness(1)
+        except Exception:
+            ctypes.windll.user32.SetProcessDPIAware()
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("PageOut.ForNotion.App")
+    except Exception:
+        pass
+
+
+_setup_portable_browsers()
 
 
 def resource_path(rel: str) -> Path:
@@ -109,13 +151,19 @@ NAME_PRESETS = ["{date} - {title}", "{title}", "{index} - {title}",
 IMG_PRESETS  = ["{page}_{n}", "{title} - {n}", "{date} - {title} - {n}",
                 "{page}_{n} - {caption}", "{original}"]
 
-FORMATS      = ["pdf", "html", "md", "txt", "docx", "json"]
+FORMATS      = ["pdf", "html", "md", "txt", "docx", "json", "tex"]
 FORMAT_LABELS= {"pdf": "PDF", "html": "HTML", "md": "Markdown", "txt": "Text",
-                "docx": "Word", "json": "JSON", "images": "Images"}
+                "docx": "Word", "json": "JSON", "tex": "LaTeX (.tex)", "images": "Images"}
 FOLDERS      = {"pdf": "PDF", "html": "HTML", "md": "Markdown", "txt": "Text",
-                "docx": "Word", "json": "JSON"}
+                "docx": "Word", "json": "JSON", "tex": "LaTeX"}
 EXTS         = {"pdf": ".pdf", "html": ".html", "md": ".md", "txt": ".txt",
-                "docx": ".docx", "json": ".json"}
+                "docx": ".docx", "json": ".json", "tex": ".tex"}
+
+GEMINI_MODELS = [
+    "gemini-3.5-flash-lite",
+    "gemini-3.8-flash",
+    "gemini-3.7-flash",
+]
 
 DEFAULTS = {
     # source
@@ -126,9 +174,14 @@ DEFAULTS = {
     "filter_prop": "", "filter_op": "contains", "filter_value": "", "max_pages": 0,
     # formats
     "fmt_pdf": True, "fmt_html": False, "fmt_md": False, "fmt_txt": False,
-    "fmt_docx": False, "fmt_json": False, "fmt_images": False,
+    "fmt_docx": False, "fmt_json": False, "fmt_tex": False, "fmt_images": False,
     "engine": ENGINES[0], "sub_mode": SUB_MODES[0], "sub_depth": 3, "sub_dbs": False,
     "combine": False,
+    # Gemini Math OCR
+    "gemini_api_key": "",
+    "gemini_math_ocr": False,
+    "gemini_model": "gemini-3.5-flash-lite",
+    "keep_whiteboard_image": False,
     # images
     "img_handling": IMG_MODES[0], "img_format": "{page}_{n}", "img_subfolder": True,
     "img_cover": False,
@@ -172,6 +225,8 @@ def load_config():
         pass
     if not cfg.get("token"):
         cfg["token"] = os.environ.get("NOTION_TOKEN", "")
+    if not cfg.get("gemini_api_key"):
+        cfg["gemini_api_key"] = os.environ.get("GEMINI_API_KEY", "")
     return cfg
 
 
@@ -958,7 +1013,7 @@ p        {{ margin: .5em 0; }}
   body {{ max-width: none; margin: 0; padding: 1cm; }}
   pre, table, figure, .callout {{ break-inside: avoid; }}
   h1, h2, h3 {{ break-after: avoid; }}
-  .notion-cover-page {{ page-break-after: always; break-after: page; min-height: 80vh; }}
+  .notion-cover-page {{ min-height: 80vh; }}
 }}
 """
     return css
@@ -1663,6 +1718,471 @@ def build_docx(title, icon_text, rows, tree, r, path, cfg):
 
 
 # ----------------------------------------------------------------------
+# LaTeX renderer & Gemini Vision Math OCR
+# ----------------------------------------------------------------------
+WHITEBOARD_OCR_PROMPT = (
+    "You are an expert mathematics professor and LaTeX typesetter. Transcribe all attached whiteboard images "
+    "in sequence from Image 1 to Image N as one continuous, logically structured math lecture in clean LaTeX body code. "
+    "Follow these rules strictly:\n"
+    "1. Continuous Flow: Connect multi-board proofs, theorems, definitions, and equations smoothly across images "
+    "without repeating headers, duplicating statements, or adding markdown code fences (```).\n"
+    "2. Logical Order: Reconstruct the mathematical flow logically (follow columns from left-to-right and top-to-bottom, "
+    "and trace arrows, side-boxes, and margin notes into their proper logical sequence as neatly formatted remarks).\n"
+    "3. Clean Up Noise: Ignore crossed-out mistakes, stray marks, and eraser smudges. Fix ambiguous handwritten "
+    "symbols using mathematical context (e.g., distinguish x vs \\times, 0 vs O, \\partial vs 2, \\in vs \\varepsilon).\n"
+    "4. Structured Math Environments: Use standard amsmath/amsthm environments cleanly (align*, equation*, cases, "
+    "pmatrix/bmatrix, \\textbf{Theorem:}, \\textbf{Definition:}, \\textbf{Proof:}, \\textbf{Example:}, \\textbf{Remark:}).\n"
+    "5. Output Format: Return ONLY valid, compilable LaTeX body code. Do NOT include \\documentclass, \\begin{document}, "
+    "\\end{document}, or markdown ``` fences."
+)
+
+
+def _generate_content_with_retry(client, model_name: str, contents: list, log_fn=None):
+    """Executes generate_content with up to 3 retries (exponential backoff: 5s, 15s, 30s) on 429 or 503 errors.
+    If the selected model still raises 503 UNAVAILABLE after retries, automatically falls back to gemini-3.5-flash-lite.
+    Returns (response, model_used).
+    """
+    delays = [5, 15, 30]
+    fallback_model = "gemini-3.5-flash-lite"
+
+    def attempt_generate(model: str):
+        for attempt in range(len(delays) + 1):
+            try:
+                return client.models.generate_content(model=model, contents=contents)
+            except Exception as e:
+                err_str = str(e).lower()
+                code = getattr(e, "code", None)
+                status = getattr(e, "status", None)
+                status_code = getattr(e, "status_code", None)
+
+                is_429 = "429" in err_str or "resource_exhausted" in err_str or 429 in (code, status, status_code)
+                is_503 = "503" in err_str or "unavailable" in err_str or 503 in (code, status, status_code)
+
+                if not (is_429 or is_503) or attempt >= len(delays):
+                    raise
+
+                wait_sec = delays[attempt]
+                err_type = "429 RESOURCE_EXHAUSTED" if is_429 else "503 UNAVAILABLE"
+                if log_fn:
+                    log_fn(f"  [Math OCR] {model} hit {err_type}. Retrying in {wait_sec}s (retry {attempt + 1}/{len(delays)})...")
+                time.sleep(wait_sec)
+
+    try:
+        resp = attempt_generate(model_name)
+        return resp, model_name
+    except Exception as e:
+        err_str = str(e).lower()
+        code = getattr(e, "code", None)
+        status = getattr(e, "status", None)
+        status_code = getattr(e, "status_code", None)
+        is_503 = "503" in err_str or "unavailable" in err_str or 503 in (code, status, status_code)
+
+        if is_503 and model_name != fallback_model:
+            if log_fn:
+                log_fn(f"  [Math OCR Fallback] {model_name} still unavailable (503). Falling back to {fallback_model}...")
+            resp = attempt_generate(fallback_model)
+            return resp, fallback_model
+        raise
+
+
+def transcribe_whiteboard_images(
+    images: list,
+    api_key: str,
+    model_name: str = "gemini-3.5-flash-lite",
+    log_fn=None,
+) -> tuple[str, str]:
+    """Transcribes a list of whiteboard images into one continuous, logically structured math lecture
+    in clean LaTeX body code using Gemini Vision.
+    Images: list of dicts with keys {"bytes": bytes, "mime": str, "num": int}
+    Returns (transcription_text, model_used).
+    """
+    if not _GENAI_AVAILABLE:
+        raise Exception("The google-genai library is not installed. Install with: pip install google-genai")
+    if not api_key:
+        raise Exception("Gemini API key is required for Math OCR. Please enter your key in the LaTeX & OCR tab.")
+    if not images:
+        return "", model_name
+
+    client = _genai.Client(api_key=api_key)
+
+    chunk_size = 10
+    chunks = [images[i:i + chunk_size] for i in range(0, len(images), chunk_size)]
+    transcriptions = []
+    used_model = model_name
+
+    for c_idx, chunk in enumerate(chunks):
+        if c_idx > 0:
+            if log_fn:
+                log_fn("  [Math OCR] Pausing 15s between image chunks to respect rate limits...")
+            time.sleep(15)
+
+        contents = [WHITEBOARD_OCR_PROMPT]
+        for item in chunk:
+            idx = item.get("num", 1)
+            part = _genai_types.Part.from_bytes(
+                data=item["bytes"],
+                mime_type=item.get("mime") or "image/jpeg"
+            )
+            contents.append(f"Image {idx}:")
+            contents.append(part)
+
+        if log_fn:
+            chunk_desc = f"Image {chunk[0].get('num', 1)}" if len(chunk) == 1 else f"Images {chunk[0].get('num', 1)}-{chunk[-1].get('num', len(chunk))}"
+            log_fn(f"  [Math OCR] Transcribing {chunk_desc} ({len(chunk)} image(s)) with {used_model}...")
+
+        response, chunk_model = _generate_content_with_retry(client, used_model, contents, log_fn=log_fn)
+        used_model = chunk_model
+
+        text = (response.text or "").strip()
+        text = re.sub(r"^```(?:latex|tex)?\s*\n?", "", text, flags=re.I)
+        text = re.sub(r"\n?```$", "", text)
+        if text.strip():
+            transcriptions.append(text.strip())
+
+    return "\n\n".join(transcriptions), used_model
+
+
+def transcribe_whiteboard_image(img_bytes: bytes, mime_type: str, api_key: str, model_name: str = "gemini-3.5-flash-lite", log_fn=None) -> str:
+    """Transcribes a math whiteboard image into clean LaTeX using Gemini Vision."""
+    text, _ = transcribe_whiteboard_images(
+        [{"bytes": img_bytes, "mime": mime_type, "num": 1}],
+        api_key=api_key,
+        model_name=model_name,
+        log_fn=log_fn
+    )
+    return text
+
+
+def collect_page_images(blocks):
+    """Collects all image blocks from a block tree in order with their downloaded bytes and mime types."""
+    image_entries = []
+    for b in walk(blocks):
+        if b.get("type") == "image":
+            img = b.get("_img")
+            d = b.get("image") or {}
+            if not img:
+                u = (d.get(d.get("type")) or {}).get("url", "")
+                if u:
+                    img = {"url": u, "n": len(image_entries) + 1}
+                    b["_img"] = img
+            if img:
+                data = img.get("bytes")
+                if not data and img.get("path") and os.path.exists(img["path"]):
+                    try:
+                        with open(img["path"], "rb") as f_in:
+                            data = f_in.read()
+                    except Exception:
+                        pass
+                if not data and img.get("url"):
+                    try:
+                        data, ctype = download(img["url"])
+                        img["bytes"] = data
+                        img["ext"] = detect_ext(img["url"], ctype, data)
+                    except Exception:
+                        pass
+                if data:
+                    ext = img.get("ext", ".png")
+                    mime = MIME.get(ext, "image/jpeg") if ext else "image/jpeg"
+                    image_entries.append({
+                        "block": b,
+                        "img": img,
+                        "bytes": data,
+                        "mime": mime,
+                        "num": len(image_entries) + 1,
+                    })
+    return image_entries
+
+
+_TEX_MAP = {
+    "\\": r"\textbackslash{}", "&": r"\&", "%": r"\%", "$": r"\$", "#": r"\#",
+    "_": r"\_", "{": r"\{", "}": r"\}", "~": r"\textasciitilde{}", "^": r"\textasciicircum{}",
+}
+_EMOJI_RE = re.compile("[\U0001F000-\U0001FAFF\u2600-\u27BF\uFE0F\u200D]")
+
+
+def escape_tex(s: str) -> str:
+    """Escape LaTeX specials in ONE pass (a sequential replace would re-escape the braces
+    of \\textbackslash{}) and drop emoji, which pdflatex cannot typeset."""
+    if not s:
+        return ""
+    s = _EMOJI_RE.sub("", s)
+    return re.sub(r"[\\&%$#_{}~^]", lambda m: _TEX_MAP[m.group()], s)
+
+
+def rt_tex(rts, r):
+    out = []
+    for x in rts or []:
+        a = x.get("annotations", {})
+        if x.get("type") == "equation":
+            s = f"${x['equation']['expression']}$"
+        else:
+            raw = x.get("plain_text", "")
+            s = escape_tex(raw).replace("\n", " ")
+        if a.get("code"):
+            s = f"\\texttt{{{s}}}"
+        if a.get("bold"):
+            s = f"\\textbf{{{s}}}"
+        if a.get("italic"):
+            s = f"\\textit{{{s}}}"
+        if a.get("strikethrough"):
+            s = f"\\sout{{{s}}}"
+        if a.get("underline"):
+            s = f"\\underline{{{s}}}"
+        href = x.get("href")
+        if href and r.keep_link(href):
+            safe_href = href.replace("%", "\\%").replace("#", "\\#")
+            s = f"\\href{{{safe_href}}}{{{s}}}"
+        out.append(s)
+    return "".join(out)
+
+
+def props_tex(rows, layout: str) -> str:
+    if not rows or layout == "Hidden":
+        return ""
+    if layout == "Notion Table":
+        rows_tex = "".join(f"  \\textbf{{{escape_tex(k)}}} & {escape_tex(v)} \\\\\n  \\hline\n" for k, v in rows)
+        return (
+            "\\begin{center}\n"
+            "\\begin{tabular}{|r|l|}\n"
+            "  \\hline\n"
+            f"{rows_tex}"
+            "\\end{tabular}\n"
+            "\\end{center}\n\\medskip\n\n"
+        )
+    if layout == "Inline Pills":
+        pills = " \\quad ".join(f"\\textbf{{{escape_tex(k)}:}} {escape_tex(v)}" for k, v in rows)
+        return f"\\noindent {pills}\n\\par\\medskip\n\n"
+    if layout == "Minimalist List":
+        items = "".join(f"  \\item[\\textbf{{{escape_tex(k)}}}] {escape_tex(v)}\n" for k, v in rows)
+        return f"\\begin{{description}}\n{items}\\end{{description}}\n\\medskip\n\n"
+    return ""
+
+
+def blocks_tex(blocks, r, it, base_dir, log_fn=None, img_counter=None, page_ocr=None):
+    if img_counter is None:
+        img_counter = [0]
+    out, i = [], 0
+    cfg = r.cfg
+
+    if page_ocr is None and cfg.get("gemini_math_ocr"):
+        page_tree = getattr(it, "tree", None) or blocks
+        page_images = collect_page_images(page_tree)
+        if page_images:
+            key = cfg.get("gemini_api_key", "").strip()
+            model = cfg.get("gemini_model", "gemini-3.5-flash-lite")
+            if log_fn:
+                log_fn(f"  [Math OCR] Found {len(page_images)} whiteboard image(s) on page. Starting single multimodal transcription...")
+            try:
+                transcription, used_model = transcribe_whiteboard_images(page_images, key, model, log_fn)
+                page_ocr = {
+                    "text": transcription,
+                    "model": used_model,
+                    "error": None,
+                    "emitted": False,
+                }
+            except Exception as err:
+                if log_fn:
+                    log_fn(f"  [Math OCR Error] {err}")
+                page_ocr = {
+                    "text": "",
+                    "model": model,
+                    "error": str(err),
+                    "emitted": False,
+                }
+        else:
+            page_ocr = {"text": "", "model": "", "error": None, "emitted": False}
+
+    while i < len(blocks):
+        b = blocks[i]
+        t = b["type"]
+        if t in LIST_TYPES:
+            env = "enumerate" if t == "numbered_list_item" else "itemize"
+            items = []
+            while i < len(blocks) and blocks[i]["type"] == t:
+                bb = blocks[i]
+                d = bb[t]
+                inner = rt_tex(d.get("rich_text"), r)
+                if t == "to_do":
+                    chk = "$\\boxtimes$" if d.get("checked") else "$\\square$"
+                    inner = f"[{chk}] {inner}"
+                else:
+                    inner = f" {inner}"
+                kids_tex = blocks_tex(bb.get("children", []), r, it, base_dir, log_fn, img_counter, page_ocr)
+                items.append(f"  \\item{inner}\n{kids_tex}")
+                i += 1
+            out.append(f"\\begin{{{env}}}\n{''.join(items)}\\end{{{env}}}\n")
+            continue
+
+        d = b.get(t) or {}
+        kids = b.get("children", [])
+
+        def sub():
+            return blocks_tex(kids, r, it, base_dir, log_fn, img_counter, page_ocr)
+
+        if t == "paragraph":
+            p = rt_tex(d.get("rich_text"), r)
+            if p.strip():
+                out.append(f"{p}\\par\\medskip\n{sub()}")
+            elif kids:
+                out.append(sub())
+        elif t == "heading_1":
+            h = rt_tex(d.get("rich_text"), r)
+            out.append(f"\\section*{{{h}}}\n{sub()}")
+        elif t == "heading_2":
+            h = rt_tex(d.get("rich_text"), r)
+            out.append(f"\\subsection*{{{h}}}\n{sub()}")
+        elif t == "heading_3":
+            h = rt_tex(d.get("rich_text"), r)
+            out.append(f"\\subsubsection*{{{h}}}\n{sub()}")
+        elif t == "quote":
+            q = rt_tex(d.get("rich_text"), r)
+            out.append(f"\\begin{{quote}}\n{q}\n{sub()}\\end{{quote}}\n")
+        elif t == "callout":
+            ic = d.get("icon") or {}
+            emoji = ic.get("emoji", "") if ic.get("type") == "emoji" else ""
+            prefix = f"\\textbf{{{escape_tex(emoji)}}} " if emoji else ""
+            c_text = rt_tex(d.get("rich_text"), r)
+            out.append(f"\\begin{{quote}}\n{prefix}{c_text}\n{sub()}\\end{{quote}}\n")
+        elif t == "code":
+            raw_code = plain(d.get("rich_text"))
+            cap = plain(d.get("caption"))
+            cap_line = f"\n% Caption: {cap}" if cap else ""
+            out.append(f"\\begin{{verbatim}}{cap_line}\n{raw_code}\n\\end{{verbatim}}\n")
+        elif t == "divider":
+            out.append("\\noindent\\rule{\\linewidth}{0.4pt}\\par\\medskip\n")
+        elif t == "equation":
+            expr = d.get("expression", "")
+            out.append(f"\\begin{{equation*}}\n{expr}\n\\end{{equation*}}\n")
+        elif t == "table":
+            rows = [x for x in kids if x["type"] == "table_row"]
+            if rows:
+                col_count = max(len(row["table_row"]["cells"]) for row in rows)
+                spec = "|" + "l|" * col_count
+                t_lines = [f"\\begin{{center}}\n\\begin{{tabular}}{{{spec}}}\n\\hline"]
+                for row in rows:
+                    cells = [rt_tex(c, r) for c in row["table_row"]["cells"]]
+                    cells += [""] * (col_count - len(cells))
+                    t_lines.append(" & ".join(cells) + " \\\\\n\\hline")
+                t_lines.append("\\end{tabular}\n\\end{center}\n")
+                out.append("\n".join(t_lines))
+        elif t == "image":
+            img = b.get("_img")
+            img_counter[0] += 1
+            cur_img_num = img_counter[0]
+            if not img:
+                u = (d.get(d.get("type")) or {}).get("url", "")
+                if u:
+                    img = {"url": u, "n": cur_img_num}
+
+            if page_ocr and not page_ocr.get("emitted"):
+                page_ocr["emitted"] = True
+                if page_ocr.get("text"):
+                    out.append(
+                        f"\n% --- Transcribed Math Whiteboard (Gemini OCR: {page_ocr['model']}) ---\n"
+                        f"{page_ocr['text']}\n"
+                        f"% --- End Transcribed Math ---\n\n"
+                    )
+                elif page_ocr.get("error"):
+                    out.append(f"\n% [Math OCR Failed on lecture images: {escape_tex(page_ocr['error'])}]\n")
+
+            if page_ocr and page_ocr.get("text") and not cfg.get("keep_whiteboard_image"):
+                i += 1
+                continue
+
+            img_path = img.get("path") if img else None
+            if img_path and os.path.splitext(img_path)[1].lower() not in (".png", ".jpg", ".jpeg", ".pdf"):
+                out.append(f"% [Image format not supported by LaTeX, convert to PNG/JPG: {os.path.basename(img_path)}]\n")
+            elif img_path and os.path.exists(img_path):
+                rel_path = os.path.relpath(img_path, base_dir).replace("\\", "/")
+                cap = plain(d.get("caption"))
+                if not cap and cfg.get("show_image_names"):
+                    cap = _build_caption(cfg.get("caption_format", "{name}"), img, cur_img_num)
+                cap_tex = f"\\caption{{{escape_tex(cap)}}}" if cap else ""
+                fig_tex = (
+                    "\\begin{figure}[htbp]\n"
+                    "\\centering\n"
+                    f"\\includegraphics[width=0.85\\linewidth]{{{rel_path}}}\n"
+                    f"{cap_tex}\n"
+                    "\\end{figure}\n\n"
+                )
+                out.append(fig_tex)
+            elif img and img.get("url"):
+                out.append(f"% [Image: {img.get('url')}]\n")
+        elif t in ("video", "file", "pdf", "audio"):
+            src = d.get(d.get("type")) or {}
+            name = plain(d.get("caption")) or d.get("name") or "Attachment"
+            out.append(f"\\texttt{{[Attachment: {escape_tex(name)}]}}\\par\\medskip\n")
+        elif t in ("bookmark", "embed", "link_preview"):
+            url = d.get("url", "")
+            text = plain(d.get("caption")) or url
+            if r.keep_link(url):
+                safe_url = url.replace("%", "\\%").replace("#", "\\#")
+                out.append(f"\\href{{{safe_url}}}{{{escape_tex(text)}}}\\par\\medskip\n")
+            else:
+                out.append(f"{escape_tex(text)}\\par\\medskip\n")
+        elif t == "child_page":
+            s = b.get("_sub")
+            if s:
+                out.append(f"\\subsection*{{{escape_tex(s['title'])}}}\n" +
+                           blocks_tex(s["tree"], r, it, base_dir, log_fn, img_counter, page_ocr))
+            else:
+                out.append(f"\\textit{{[Child Page: {escape_tex(d.get('title', ''))}]}}\\par\\medskip\n")
+        elif t in ("column_list", "column", "synced_block"):
+            out.append(sub())
+        elif "rich_text" in d:
+            t_str = rt_tex(d.get("rich_text"), r)
+            if t_str.strip():
+                out.append(f"{t_str}\\par\\medskip\n{sub()}")
+            elif kids:
+                out.append(sub())
+
+        i += 1
+    return "".join(out)
+
+
+def build_complete_latex(title: str, prop_rows: list, body_tex: str, cfg: dict) -> str:
+    """Wraps body LaTeX in a clean, complete, compilable LaTeX article document."""
+    escaped_title = escape_tex(title)
+    props_block = props_tex(prop_rows, cfg.get("prop_layout", "Notion Table"))
+    cover_page_break = "\\newpage\n\n" if cfg.get("cover_page") else ""
+
+    doc = [
+        "\\documentclass[11pt,a4paper]{article}",
+        "% Compile with pdflatex (Latin text). For Arabic/CJK use xelatex or lualatex.",
+        "\\usepackage[utf8]{inputenc}",
+        "\\usepackage[T1]{fontenc}",
+        "\\usepackage[margin=1in]{geometry}",
+        "\\usepackage{amsmath,amssymb,amsthm}",
+        "\\usepackage{graphicx}",
+        "\\usepackage[normalem]{ulem}",
+        "\\usepackage{xcolor}",
+        "\\usepackage{hyperref}",
+        "",
+        "\\hypersetup{",
+        "    colorlinks=true,",
+        "    linkcolor=blue,",
+        "    filecolor=magenta,",
+        "    urlcolor=blue,",
+        f"    pdftitle={{{escaped_title}}},",
+        "}",
+        "",
+        f"\\title{{{escaped_title}}}",
+        "\\author{}",
+        "\\date{\\today}",
+        "",
+        "\\begin{document}",
+        "\\maketitle",
+        "",
+        props_block,
+        cover_page_break,
+        body_tex,
+        "\\end{document}",
+        "",
+    ]
+    return "\n".join(doc)
+
+
+# ----------------------------------------------------------------------
 # Browser / PDF
 # ----------------------------------------------------------------------
 STEALTH_ARGS = ["--disable-blink-features=AutomationControlled"]
@@ -1867,6 +2387,8 @@ class Exporter:
         self.cache      = {}
         self.used_paths = set()
         self.failed     = []
+        self.last_tex   = ""
+        self._tex_body  = ""
 
     # ---- sources ----
     def fetch_roots(self):
@@ -1966,8 +2488,8 @@ class Exporter:
         handling   = c["img_handling"]
         engine_api = c["engine"] == ENGINES[0]
         save_files = c["fmt_images"] or handling == IMG_MODES[1] or \
-            (handling == IMG_MODES[0] and c["fmt_md"])
-        need_bytes = save_files or c["fmt_docx"] or \
+            (handling == IMG_MODES[0] and (c["fmt_md"] or c.get("fmt_tex", False))) or c.get("fmt_tex", False)
+        need_bytes = save_files or c["fmt_docx"] or c.get("fmt_tex", False) or c.get("gemini_math_ocr", False) or \
             (handling == IMG_MODES[0] and (c["fmt_html"] or (c["fmt_pdf"] and engine_api)))
         if not (save_files or need_bytes):
             return
@@ -2066,6 +2588,12 @@ class Exporter:
         lines += blocks_txt(it.tree or [])
         return "\n".join(lines) + "\n"
 
+    def text_tex(self, it, base_dir):
+        r = R(self.cfg, "tex", base_dir)
+        body = blocks_tex(it.tree or [], r, it, base_dir, self.log)
+        self._tex_body = body
+        return build_complete_latex(it.title, self.prop_rows(it), body, self.cfg)
+
     # ---- pdf ----
     def pdf_browser(self, page, it, path, hide_names):
         for attempt in range(int(self.cfg["retries"]) + 1):
@@ -2113,7 +2641,7 @@ class Exporter:
                  ", ".join(FORMAT_LABELS[f] for f in formats + (["images"] if c["fmt_images"] else [])))
 
         hide_names   = [n for n in self.all_props if n not in self.shown_props] if self.all_props else []
-        made_pdfs, combined_html, combined_md = [], [], []
+        made_pdfs, combined_html, combined_md, made_tex = [], [], [], []
         tmp = tempfile.mkdtemp(prefix="notion_export_")
         pw = browser = ctx = page = None
         try:
@@ -2125,6 +2653,7 @@ class Exporter:
 
             html_root = os.path.join(c["save_dir"], FOLDERS["html"])
             md_root   = os.path.join(c["save_dir"], FOLDERS["md"])
+            tex_root  = os.path.join(c["save_dir"], FOLDERS["tex"])
 
             for i, it in enumerate(items, 1):
                 if self.cancel.is_set():
@@ -2170,6 +2699,12 @@ class Exporter:
                                         "blocks": strip_private(it.tree or [])}
                                 with open(path, "w", encoding="utf-8") as f:
                                     json.dump(data, f, ensure_ascii=False, indent=2, default=str)
+                            elif fmt == "tex":
+                                tex_code = self.text_tex(it, os.path.dirname(path))
+                                with open(path, "w", encoding="utf-8") as f:
+                                    f.write(tex_code)
+                                made_tex.append((it.title, path, self._tex_body))
+                                self.last_tex = tex_code
                         except LoginRequired:
                             raise
                         except Exception as e:
@@ -2217,6 +2752,12 @@ class Exporter:
         if combined_md:
             with open(os.path.join(md_root, name + ".md"), "w", encoding="utf-8") as f:
                 f.write("\n\n---\n\n".join(combined_md))
+        if made_tex and c["combine"]:
+            combined_tex_sections = []
+            for it_title, _, body_code in made_tex:
+                combined_tex_sections.append(f"\\clearpage\n\\section{{{escape_tex(it_title)}}}\n\n" + body_code)
+            with open(os.path.join(tex_root, name + ".tex"), "w", encoding="utf-8") as f:
+                f.write(build_complete_latex(name, [], "\n\n".join(combined_tex_sections), c))
 
         if made_pdfs and c["output_mode"] != OUTPUT_MODES[2]:
             self.log("Merging PDFs...")
@@ -2250,8 +2791,10 @@ class App:
     def __init__(self):
         self.cfg0 = load_config()
         self.root = tk.Tk()
-        self.root.title("PageOut for Notion")
-        self.root.geometry("800x960")
+        self.root.title(f"{APP_NAME} v{APP_VERSION}")
+        sh = self.root.winfo_screenheight()
+        self.root.geometry(f"820x{min(960, sh - 90)}")
+        self.root.minsize(700, 560)
         self.root.resizable(True, True)
 
         # Apply custom icon (removes default Tkinter feather)
@@ -2355,9 +2898,16 @@ class App:
                     self.bar.config(maximum=max(n, 1), value=i)
                     self.status.set(f"{i} / {n}")
                 elif kind == "done":
-                    _, out, count, failed = item
+                    out = item[1]
+                    count = item[2]
+                    failed = item[3]
+                    last_tex = item[4] if len(item) > 4 else ""
                     self.set_running(False)
                     text = f"Exported {count} page(s).\n\n{out}"
+                    if last_tex:
+                        self.last_latex_text = last_tex
+                        self.copy_latex_btn.config(state="normal")
+                        text += "\n\nLaTeX export ready! Click '📋 Copy LaTeX' to copy."
                     if failed:
                         text += f"\n\n{len(failed)} problem(s):\n" + "\n".join(
                             f"- {f}: {r}" for f, r in failed[:10])
@@ -2369,11 +2919,28 @@ class App:
                 elif kind == "error":
                     self.set_running(False)
                     messagebox.showerror("Export failed", item[1])
+                elif kind == "call":
+                    _, fn, res, err = item
+                    self.root.config(cursor="")
+                    fn(res, err)
                 elif kind == "loginend":
                     self.login_btn.config(state="normal")
         except queue.Empty:
             pass
         self.root.after(100, self.poll)
+
+    def save_gemini_key(self):
+        c = self.collect()
+        save_config(c)
+        messagebox.showinfo("Key Saved", f"Gemini API key saved to local user config:\n{CONFIG_FILE}")
+
+    def copy_latex(self):
+        if not getattr(self, "last_latex_text", None):
+            messagebox.showinfo("Copy LaTeX", "No LaTeX export is available yet. Run an export with 'LaTeX (.tex)' selected.")
+            return
+        self.root.clipboard_clear()
+        self.root.clipboard_append(self.last_latex_text)
+        messagebox.showinfo("Copied to Clipboard", "Complete LaTeX document copied to clipboard!")
 
     def start_export(self):
         try:
@@ -2386,6 +2953,22 @@ class App:
         if not c["save_dir"].strip():
             messagebox.showerror("Missing folder", "Choose an output folder on the Output tab.")
             return
+        if c.get("gemini_math_ocr"):
+            if not _GENAI_AVAILABLE:
+                messagebox.showerror(
+                    "Package Missing",
+                    "The 'google-genai' library is required for Gemini Math OCR.\n\n"
+                    "Please install it with:\n  pip install google-genai"
+                )
+                return
+            if not c.get("gemini_api_key", "").strip():
+                messagebox.showerror(
+                    "Gemini API Key Required",
+                    "Math OCR with Gemini Vision is enabled, but no Gemini API Key was entered.\n\n"
+                    "Please enter your personal Gemini API key in the 'LaTeX & OCR' tab.\n"
+                    "You can get a free key at:\nhttps://aistudio.google.com/"
+                )
+                return
         save_config(c)
         shown    = [self.props_list.get(i) for i in self.props_list.curselection()]
         selected = None
@@ -2400,7 +2983,7 @@ class App:
             try:
                 ex       = Exporter(c, self.loaded_props, shown, self.log, self.progress, self.cancel)
                 out, count, failed = ex.run(selected)
-                self.q.put(("done", out, count, failed))
+                self.q.put(("done", out, count, failed, getattr(ex, "last_tex", "")))
             except Cancelled:
                 self.q.put(("cancelled",))
             except Exception as e:
@@ -2424,72 +3007,88 @@ class App:
 
         threading.Thread(target=worker, daemon=True).start()
 
+    def bg(self, work, done):
+        """Run `work` in a thread (UI stays responsive); `done(result, error)` runs in the UI thread."""
+        self.root.config(cursor="watch")
+
+        def runner():
+            try:
+                res, err = work(), None
+            except Exception as e:
+                res, err = None, e
+            self.q.put(("call", done, res, err))
+
+        threading.Thread(target=runner, daemon=True).start()
+
     def load_props(self):
         c = self.collect()
         if not self.need_basic(c):
             return
-        try:
-            self.root.config(cursor="watch")
-            self.root.update_idletasks()
-            names = load_property_names(Client(auth=c["token"]), c["database"], c["source_type"])
-        except Exception as e:
-            messagebox.showerror("Could not load properties", str(e))
-            return
-        finally:
-            self.root.config(cursor="")
-        self.loaded_props = names
-        self.props_list.delete(0, tk.END)
-        for n in names:
-            self.props_list.insert(tk.END, n)
-        self.props_list.select_set(0, tk.END)
-        self.sort_combo.config(values=SORT_BUILTIN + names)
-        self.filter_combo.config(values=[""] + names + ["Title", "Date"])
-        self.hint.set("Placeholders: {title} {date} {index} {created} {edited} {parent}\n"
-                      "Your properties: " + " ".join("{%s}" % n for n in names) +
-                      "\nFormats: {date:%d-%m-%Y}   {title:40} (truncate)")
-        self.append_log(f"Loaded {len(names)} properties.")
+
+        def work():
+            return load_property_names(Client(auth=c["token"]), c["database"], c["source_type"])
+
+        def done(names, err):
+            if err:
+                messagebox.showerror("Could not load properties", str(err))
+                return
+            self.loaded_props = names
+            self.props_list.delete(0, tk.END)
+            for n in names:
+                self.props_list.insert(tk.END, n)
+            self.props_list.select_set(0, tk.END)
+            self.sort_combo.config(values=SORT_BUILTIN + names)
+            self.filter_combo.config(values=[""] + names + ["Title", "Date"])
+            self.hint.set("Placeholders: {title} {date} {index} {created} {edited} {parent}\n"
+                          "Your properties: " + " ".join("{%s}" % n for n in names) +
+                          "\nFormats: {date:%d-%m-%Y}   {title:40} (truncate)")
+            self.append_log(f"Loaded {len(names)} properties.")
+
+        self.bg(work, done)
 
     def load_pages(self):
         c = self.collect()
         if not self.need_basic(c):
             return
-        try:
-            self.root.config(cursor="watch")
-            self.root.update_idletasks()
-            ex    = Exporter(c)
-            pages = ex.fetch_roots()
-        except Exception as e:
-            messagebox.showerror("Could not load pages", str(e))
-            return
-        finally:
-            self.root.config(cursor="")
-        self.loaded_pages, self.loaded_source = pages, c["database"].strip()
-        self.pages_list.delete(0, tk.END)
-        for p in pages:
-            f = page_fields(p)
-            self.pages_list.insert(tk.END, f"{f['date'] or '—'}   {f['title']}")
-        self.pages_list.select_set(0, tk.END)
-        self.append_log(f"Loaded {len(pages)} pages. Deselect the ones you don't want.")
+
+        def done(pages, err):
+            if err:
+                messagebox.showerror("Could not load pages", str(err))
+                return
+            self.loaded_pages, self.loaded_source = pages, c["database"].strip()
+            self.pages_list.delete(0, tk.END)
+            for p in pages:
+                f = page_fields(p)
+                self.pages_list.insert(tk.END, f"{f['date'] or '—'}   {f['title']}")
+            self.pages_list.select_set(0, tk.END)
+            self.append_log(f"Loaded {len(pages)} pages. Deselect the ones you don't want.")
+
+        self.bg(lambda: Exporter(c).fetch_roots(), done)
 
     def preview_names(self):
         try:
             c = self.collect()
-            if not self.need_basic(c):
+        except Exception:
+            messagebox.showerror("Invalid value", "Check the numeric fields.")
+            return
+        if not self.need_basic(c):
+            return
+
+        def work():
+            return Exporter(c).fetch_roots()[:8]
+
+        def done(pages, err):
+            if err:
+                messagebox.showerror("Preview failed", str(err))
                 return
-            self.root.config(cursor="watch")
-            self.root.update_idletasks()
-            ex    = Exporter(c)
-            pages = ex.fetch_roots()[:8]
             names = [build_name(c["name_format"], page_fields(p, i, 2)) for i, p in enumerate(pages, 1)]
             img   = [build_name(c["img_format"], dict(page_fields(p, i, 2), page=n, n="01",
                                                       caption="caption", original="image"))
                      for i, (p, n) in enumerate(zip(pages, names), 1)][:3]
             messagebox.showinfo("Name preview", "Files:\n" + "\n".join(names) +
                                 "\n\nImages:\n" + "\n".join(x + ".png" for x in img))
-        except Exception as e:
-            messagebox.showerror("Preview failed", str(e))
-        finally:
-            self.root.config(cursor="")
+
+        self.bg(work, done)
 
     def choose_folder(self):
         d = filedialog.askdirectory(title="Choose output folder")
@@ -2521,7 +3120,7 @@ class App:
     def build(self):
         V       = self.V
         self.nb = ttk.Notebook(self.root)
-        self.nb.pack(fill="both", expand=True, padx=10, pady=(10, 4))
+        ttk.Style().configure("TNotebook.Tab", padding=(8, 3))
 
         # ══════════════════════════════════════════════════════════
         # Tab: Source
@@ -2614,10 +3213,60 @@ class App:
                  ttk.Spinbox(t, from_=1, to=10, textvariable=V["sub_depth"], width=8))
         self.check(t, "sub_dbs", "Separate files: also export rows of databases inside pages").grid(
             row=5, column=1, sticky="w", padx=8, pady=3)
-        self.check(t, "combine", "Also create one combined HTML / Markdown file").grid(
+        self.check(t, "combine", "Also create one combined HTML / Markdown / LaTeX file").grid(
             row=6, column=1, sticky="w", padx=8, pady=3)
         ttk.Label(t, text="Inline sub-pages need the API engine or non-PDF formats.",
                   foreground="#666").grid(row=7, column=1, sticky="w", padx=8)
+
+        # ══════════════════════════════════════════════════════════
+        # Tab: LaTeX & OCR
+        # ══════════════════════════════════════════════════════════
+        t = self.tab("LaTeX & OCR")
+
+        # ── Gemini API Key ──
+        self.section(t, 0, "Gemini Vision API Key (Multi-User Setup)")
+        ttk.Label(t, text="Each user uses their own Gemini API key. Keys are never shared or hardcoded,\n"
+                          "and are stored only in your local ~/.notion_pdf_exporter/config.json.",
+                  foreground="#555", justify="left").grid(row=2, column=1, sticky="w", padx=8, pady=(0, 4))
+
+        key_frame = ttk.Frame(t)
+        self.gemini_key_entry = ttk.Entry(key_frame, textvariable=V["gemini_api_key"], show="•", width=34)
+        self.gemini_key_entry.pack(side="left", fill="x", expand=True)
+        self.show_gemini_key = tk.BooleanVar(value=False)
+        ttk.Checkbutton(key_frame, text="Show", variable=self.show_gemini_key,
+                        command=lambda: self.gemini_key_entry.config(show="" if self.show_gemini_key.get() else "•")
+                        ).pack(side="left", padx=6)
+        ttk.Button(key_frame, text="Save Key", command=self.save_gemini_key).pack(side="left", padx=4)
+        ttk.Button(key_frame, text="Get Free Key ↗", command=lambda: webbrowser.open("https://aistudio.google.com/")).pack(side="left", padx=4)
+        self.row(t, 3, "Gemini API Key", key_frame)
+
+        # ── Math OCR Options ──
+        self.section(t, 4, "Math OCR for University Whiteboards")
+        self.check(t, "gemini_math_ocr",
+                   "Scan images with Gemini Math OCR (convert whiteboard photos to LaTeX)").grid(
+            row=6, column=1, sticky="w", padx=8, pady=2)
+
+        self.row(t, 7, "Gemini Model",
+                 self.combo(t, "gemini_model", GEMINI_MODELS, state="normal"))
+
+        self.check(t, "keep_whiteboard_image",
+                   "Keep original whiteboard image below transcribed LaTeX").grid(
+            row=8, column=1, sticky="w", padx=8, pady=2)
+
+        ttk.Label(t, text="Smart Whiteboard OCR features:\n"
+                          "• Logical flow reconstruction (columns, arrows, side-box remarks)\n"
+                          "• Cleans smudges, eraser marks, and crossed-out mistakes\n"
+                          "• Fixes ambiguous handwriting (x vs \\times, 0 vs O, \\partial vs 2)\n"
+                          "• Formats standard amsmath/amsthm (align*, equation*, cases, pmatrix, Proof)",
+                  foreground="#666", justify="left").grid(row=9, column=1, sticky="w", padx=8, pady=(4, 8))
+
+        # ── LaTeX Document Options ──
+        self.section(t, 10, "LaTeX Export (.tex)")
+        self.check(t, "fmt_tex", "Export as LaTeX (.tex) document").grid(
+            row=12, column=1, sticky="w", padx=8, pady=2)
+        copy_box = ttk.Frame(t)
+        ttk.Button(copy_box, text="📋 Copy Last Exported LaTeX to Clipboard", command=self.copy_latex).pack(side="left")
+        self.row(t, 13, "Clipboard", copy_box)
 
         # ══════════════════════════════════════════════════════════
         # Tab: Images
@@ -2643,7 +3292,7 @@ class App:
         # ── Image layout section ──
         self.section(t, 7, "Image Layout (PDF / HTML / Word)")
         self.check(t, "maximize_images",
-                   "Maximize images when page contains only images").grid(
+                   "Maximize images (full page width)").grid(
             row=9, column=1, sticky="w", padx=8, pady=2)
         self.check(t, "one_image_per_page",
                    "One image per page (insert page break after each image)").grid(
@@ -2777,19 +3426,24 @@ class App:
         # Run area (bottom bar)
         # ══════════════════════════════════════════════════════════
         run = ttk.Frame(self.root)
-        run.pack(fill="x", padx=10, pady=4)
         self.export_btn = ttk.Button(run, text="▶  Export", command=self.start_export)
         self.export_btn.pack(side="left")
         self.cancel_btn = ttk.Button(run, text="✕  Cancel", command=self.cancel_export,
                                      state="disabled")
         self.cancel_btn.pack(side="left", padx=6)
+        self.copy_latex_btn = ttk.Button(run, text="📋 Copy LaTeX", command=self.copy_latex,
+                                         state="disabled")
+        self.copy_latex_btn.pack(side="left", padx=6)
         self.status = tk.StringVar()
         ttk.Label(run, textvariable=self.status).pack(side="right")
         self.bar = ttk.Progressbar(self.root, mode="determinate")
-        self.bar.pack(fill="x", padx=10, pady=2)
-        self.log_box = tk.Text(self.root, height=8, state="disabled", bg="#f7f7f7",
+        self.log_box = tk.Text(self.root, height=7, state="disabled", bg="#f7f7f7",
                                relief="flat", borderwidth=1)
-        self.log_box.pack(fill="x", padx=10, pady=4)
+        # bottom widgets first so Export/log never get cut off on small screens
+        self.log_box.pack(side="bottom", fill="x", padx=10, pady=4)
+        self.bar.pack(side="bottom", fill="x", padx=10, pady=2)
+        run.pack(side="bottom", fill="x", padx=10, pady=4)
+        self.nb.pack(side="top", fill="both", expand=True, padx=10, pady=(10, 4))
 
     def run(self):
         self.root.mainloop()
@@ -2798,6 +3452,7 @@ class App:
 def main():
     if tk is None:
         raise SystemExit("Tkinter is not available in this Python installation.")
+    _windows_integration()
     App().run()
 
 
