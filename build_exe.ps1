@@ -1,96 +1,71 @@
-﻿# ============================================================
-#  PageOut for Notion – PyInstaller build script (PowerShell)
 # ============================================================
-#
+#  PageOut for Notion - PyInstaller build script (PowerShell)
+# ============================================================
 #  Prerequisites:
-#    pip install pyinstaller pillow
-#    pip install notion-client playwright pypdf python-docx
-#    playwright install chromium
+#    pip install -r requirements.txt pyinstaller
+#    playwright install chromium        (only needed for the Browser PDF engine)
 #
-#  Run from the project root:
-#    .\build_exe.ps1
+#  Run from the project root:   .\build_exe.ps1
+#  Debug build (shows console): .\build_exe.ps1 -Console
 # ============================================================
+param([switch]$Console)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+Set-Location -Path $PSScriptRoot
 
 Write-Host ""
 Write-Host "============================================================"
 Write-Host "  PageOut for Notion | PyInstaller build"
 Write-Host "============================================================"
-Write-Host ""
 
-# ── Check prerequisites ──────────────────────────────────────────────────────
-if (-not (Get-Command pyinstaller -ErrorAction SilentlyContinue)) {
-    Write-Error "pyinstaller not found on PATH.`nRun: pip install pyinstaller"
-}
+# -- prerequisites ------------------------------------------------------
+& python -m PyInstaller --version *> $null
+if ($LASTEXITCODE -ne 0) { throw "PyInstaller not found. Run: pip install pyinstaller" }
+if (-not (Test-Path "notion_exporter.py")) { throw "Run this script from the project folder." }
 
-# ── Locate icon ──────────────────────────────────────────────────────────────
-$iconArg = @()
+# -- icon (exe icon + bundled copy for the window/taskbar icon) ---------
+$iconArgs = @()
 if (Test-Path "icon.ico") {
-    $iconArg = @("--icon=icon.ico")
+    $iconArgs += "--icon=icon.ico"
     Write-Host "[INFO] Using icon.ico"
-} elseif (Test-Path "icon.png") {
-    $iconArg = @("--icon=icon.png")
-    Write-Host "[INFO] Using icon.png (PyInstaller will convert to .ico)"
 } else {
-    Write-Host "[INFO] No .ico/.png icon found; app will use programmatic icon at runtime."
+    Write-Warning "icon.ico not found - the exe will use the default icon."
+}
+foreach ($f in @("icon.ico", "icon.png")) {
+    if (Test-Path $f) { $iconArgs += "--add-data=$f;." }
 }
 
-# ── Collect --add-data for icon files that exist ─────────────────────────────
-$addData = @()
-foreach ($f in @("icon.ico", "icon.png", "icon.jpg")) {
-    if (Test-Path $f) {
-        $addData += "--add-data=$f;."
-    }
-}
-
-# ── Playwright Chromium note ─────────────────────────────────────────────────
-Write-Host ""
-Write-Host "[INFO] Playwright Chromium:"
-Write-Host "  The Browser PDF engine requires Chromium."
-Write-Host "  To use it on another PC after distributing the .exe:"
-Write-Host "    Option A) Run 'playwright install chromium' on that machine."
-Write-Host "    Option B) Copy the Chromium folder and set env:"
-Write-Host "              `$env:PLAYWRIGHT_BROWSERS_PATH = 'C:\path\to\browsers'"
-Write-Host "  The API engine (default) requires NO browser at all."
-Write-Host ""
-
-# ── PyInstaller arguments ─────────────────────────────────────────────────────
+# -- arguments ----------------------------------------------------------
 $pyiArgs = @(
+    "--noconfirm", "--clean",
     "--onefile",
-    "--windowed",                       # no console window (remove for debug)
-    "--name=PageOut-for-Notion",
-    # Resource files bundled into the .exe
-    "--add-data=notion_exporter.py;.",
-    # Icons (only the ones that exist, added above)
-) + $addData + $iconArg + @(
-    # Force-include runtime imports PyInstaller may miss
+    "--name=PageOut-for-Notion"
+)
+if (-not $Console) { $pyiArgs += "--windowed" }
+$pyiArgs += $iconArgs
+$pyiArgs += @(
+    # packages with data files / drivers that PyInstaller cannot see on its own
+    "--collect-all=playwright",      # bundled Node driver
+    "--collect-all=google.genai",
+    "--collect-data=docx",           # python-docx default template
     "--hidden-import=notion_client",
-    "--hidden-import=playwright",
-    "--hidden-import=playwright.sync_api",
     "--hidden-import=pypdf",
-    "--hidden-import=docx",
-    "--hidden-import=PIL",
-    "--hidden-import=PIL.Image",
-    "--hidden-import=PIL.ImageDraw",
-    "--hidden-import=PIL.ImageFont",
     "--hidden-import=PIL.ImageTk",
     "notion_exporter.py"
 )
 
-Write-Host "[BUILD] Running: pyinstaller $pyiArgs"
-Write-Host ""
-
-& pyinstaller @pyiArgs
-
-if ($LASTEXITCODE -ne 0) {
-    Write-Error "PyInstaller build failed (exit code $LASTEXITCODE)."
-}
+Write-Host "[BUILD] python -m PyInstaller $($pyiArgs -join ' ')"
+& python -m PyInstaller @pyiArgs
+if ($LASTEXITCODE -ne 0) { throw "PyInstaller build failed (exit code $LASTEXITCODE)." }
 
 Write-Host ""
 Write-Host "============================================================"
-Write-Host "  Build complete!"
-Write-Host "  Output: dist\PageOut-for-Notion.exe"
+Write-Host "  Build complete:  dist\PageOut-for-Notion.exe"
 Write-Host "============================================================"
+Write-Host "  Browser PDF engine needs Chromium on the target PC:"
+Write-Host "    a) run 'playwright install chromium' there, or"
+Write-Host "    b) copy your ms-playwright folder next to the .exe and"
+Write-Host "       rename it to 'browsers' (the app picks it up automatically)."
+Write-Host "  The API engine (default) needs no browser."
 Write-Host ""

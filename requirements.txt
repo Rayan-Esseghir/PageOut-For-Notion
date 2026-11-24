@@ -1,5 +1,7 @@
-notion-client
-playwright
-pypdf
-python-docx
-pillow
+notion-client>=2.2
+playwright>=1.40
+pypdf>=4.0
+python-docx>=1.0
+pillow>=10.0
+google-genai>=1.0
+# build only:  pip install pyinstaller
