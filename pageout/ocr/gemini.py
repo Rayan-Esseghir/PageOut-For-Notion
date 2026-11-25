@@ -3,6 +3,7 @@
 import os
 import re
 import time
+from typing import Any
 
 try:
     from google import genai as _genai
@@ -10,8 +11,8 @@ try:
 
     _GENAI_AVAILABLE = True
 except ImportError:
-    _genai = None  # pip install google-genai
-    _genai_types = None
+    _genai = None  # type: ignore[assignment]  # pip install google-genai
+    _genai_types = None  # type: ignore[assignment]
     _GENAI_AVAILABLE = False
 
 from pageout.core.assets import MIME, detect_ext, download
@@ -117,7 +118,7 @@ def transcribe_whiteboard_images(
                 log_fn("  [Math OCR] Pausing 15s between image chunks to respect rate limits...")
             time.sleep(15)
 
-        contents = [WHITEBOARD_OCR_PROMPT]
+        contents: list[Any] = [WHITEBOARD_OCR_PROMPT]
         for item in chunk:
             idx = item.get("num", 1)
             part = _genai_types.Part.from_bytes(data=item["bytes"], mime_type=item.get("mime") or "image/jpeg")
