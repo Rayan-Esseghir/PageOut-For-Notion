@@ -5,7 +5,7 @@
 # PageOut for Notion
 
 Export Notion pages to **PDF, HTML, Markdown, Text, Word, JSON and LaTeX**, and save
-their **images with custom names**. Desktop app (Tkinter) · **v1.0.0-beta.1 (Beta)**
+their **images with custom names**. Desktop app (Tkinter) **and command line** · **v1.0.0-rc.1 (Release Candidate)**
 
 ---
 
@@ -27,6 +27,12 @@ their **images with custom names**. Desktop app (Tkinter) · **v1.0.0-beta.1 (Be
 | **Page icon** | Show Notion emoji/icon · hide · use custom local image file |
 | **Page numbers** | Bottom Center / Bottom Right / Top Right; `Page X of Y` or `X` |
 | **Date formats** | YYYY-MM-DD, DD/MM/YYYY, MMM DD YYYY, Relative, ISO 8601, or any `strftime` |
+| **Links** | Links/mentions between exported pages become relative links that work offline (HTML, Markdown, Obsidian `[[wikilinks]]`) |
+| **Sync** | Incremental: unchanged pages are skipped on the next run (`--force` to redo) |
+| **Markdown** | GFM · Vanilla · Obsidian presets |
+| **Databases** | Index page, table of properties, or CSV of all properties |
+| **Offline** | Bundled KaTeX (math without internet); Notion export `.zip` as an offline source (experimental) |
+| **Automation** | `pageout` CLI, `pageout.yaml`, Python hooks |
 | **Other** | Merged PDF with bookmarks, combined HTML/Markdown, resume, retries |
 
 ---
@@ -35,8 +41,9 @@ their **images with custom names**. Desktop app (Tkinter) · **v1.0.0-beta.1 (Be
 
 ```bash
 pip install -r requirements.txt
-playwright install chromium
-python notion_exporter.py
+playwright install chromium        # only for the PDF engines
+python notion_exporter.py          # GUI
+python notion_exporter.py export <url> --format pdf,md --out ./export     # CLI
 ```
 
 > **Pillow** (`pillow`) is needed only for the custom-icon feature; everything
@@ -52,22 +59,79 @@ python notion_exporter.py
 
 ---
 
-> ### ⚠️ Beta software
-> PageOut for Notion is in **Beta**: every main feature works, but the app is new and still being tested,
-> so you may run into bugs. Your Notion data is never modified (the app only reads it), but please keep
-> backups of anything important. If something goes wrong, copy the text from the log box at the bottom of
-> the window and report it.
->
-> **Alpha vs Beta:** *Alpha* = early version, features missing or unstable, tested by the developer only.
-> *Beta* = feature-complete enough for real use, tested by real users, bugs are fixed before the final
-> **1.0.0** release.
+> ### Release candidate
+> Every feature is implemented and covered by automated tests (80+, no network needed). The PDF engines,
+> the GUI on your machine and the built `.exe` still need the manual checklist below before the final
+> **1.0.0**. Your Notion data is never modified (the app only reads it). If something goes wrong, copy the text
+> from the log box (or the CLI output) and report it. Secrets are redacted from logs.
 
-## What's new in the Beta
+## What's new in 1.0.0-rc.1
 
-- Tick-box lists for pages and properties, working mouse-wheel scrolling on every tab, bigger log window.
-- Font chooser that shows every font in its own typeface.
-- Output styled like Notion itself (typography, callouts, quotes, code, tables, lists, property rows).
-- Empty PDF pages are removed automatically (PDF tab). Default margin is now 20 mm.
+See [CHANGELOG.md](CHANGELOG.md). Short version: new `pageout/` package with a typed IR, offline link
+rewriting, incremental sync, CLI + hooks, Markdown presets, database exports, bundled KaTeX, real images in LaTeX,
+keyring-based secrets.
+
+## Command line
+
+```bash
+pageout export https://www.notion.so/<db-or-page> -f pdf,md,html -o ./export      # python -m pageout ... also works
+pageout export -c pageout.yaml                       # settings file (pageout init-config writes an example)
+pageout export <url> -f md --md-preset obsidian --db-export index --sub-pages inline
+pageout export --zip notion-export.zip -f html,md    # offline, no token
+pageout export <url> -f md --force                   # ignore the incremental cache
+pageout export <url> -f md --set margin_mm=10 --set math_engine=None
+```
+
+Settings are layered (later wins): defaults < `~/.notion_pdf_exporter/config.json` < `pageout.yaml` < flags.
+The token comes from `--token`, `NOTION_TOKEN`, or the OS keyring (never from the yaml file).
+Exit codes: `0` ok · `1` some pages failed · `2` usage/config error · `130` cancelled.
+The windowed `.exe` is the GUI; for the CLI use `python -m pageout` or build with `.\build_exe.ps1 -Console`.
+
+## Incremental sync
+
+After an export the app writes `.pageout_cache.json` into the output folder. On the next run a page is skipped
+when its `last_edited_time`, your settings and its output files are unchanged. It is switched off automatically
+for combined files, inline sub-pages (a sub-page edit does not change the parent's timestamp) and raw image
+export. Tick **Force full re-export** (or `--force`) to redo everything.
+
+## Hooks
+
+```python
+def filter_page(page):                 # False -> skip the page
+def transform_node(block, doc):        # return the block, a new one, or None to drop it
+def transform_frontmatter(fm, doc):    # Markdown front matter dict
+```
+Use `--hooks my_hooks.py` or `hooks:` in `pageout.yaml`. See `examples/hooks_example.py`.
+Hook files are ordinary Python: only load files you trust.
+
+## Project layout
+
+```
+pageout/core/        config, naming, pipeline, ir, resolver, cache, assets, secrets, database
+pageout/sources/     notion_api (client, rate limit), notion_ir (JSON -> IR), notion_zip (offline)
+pageout/renderers/   html, pdf, markdown, txt, docx, latex
+pageout/ocr/         gemini (Math OCR)      pageout/plugins/  hooks      pageout/gui/  Tkinter app
+tests/               pytest: fixtures (recorded-shape JSON), golden files, unit + feature tests
+```
+Only `sources/` knows Notion's JSON; renderers read the IR in `core/ir.py`. The GUI and the CLI both call
+`core.pipeline.export()`.
+
+## Development
+
+```bash
+pip install -r requirements-dev.txt
+python -m pytest -q          # no network, no browser, no Notion token needed
+ruff check pageout tests && ruff format --check pageout tests && mypy
+```
+Golden files: `tests/golden/`. After an *intended* output change: `UPDATE_GOLDEN=1 python -m pytest tests/test_golden.py`
+(PowerShell: `$env:UPDATE_GOLDEN=1`) and review `git diff tests/golden`.
+
+### Manual checklist before 1.0.0
+1. GUI: export a real page to PDF (API engine), HTML, Markdown, Word, LaTeX; open each.
+2. PDF **Browser** engine with a private page (`playwright install chromium`, log in once).
+3. A database with 20+ pages: run twice, the second run must say "unchanged, skipped".
+4. A page with an image older than an hour: images must still export (expired links are re-fetched).
+5. `.\build_exe.ps1`, start `dist\PageOut-for-Notion.exe`, export once, check the icon.
 
 ## Highlights
 
@@ -75,7 +139,7 @@ python notion_exporter.py
 - **Style presets** and **45+ fonts** (any font installed on your PC, plus optional Google Fonts such as Inter, Lora, Cairo, Amiri). Arabic text flows right-to-left automatically.
 - **Prettier PDF/HTML**: accent color, nicer tables, callouts, code blocks, quotes, KaTeX math rendering.
 - **Faster export**: pages/images are fetched in parallel while the previous page renders; big photos are shrunk inside PDF/Word files.
-- LaTeX: images are written as `% [Image ...]` comments for now.
+- LaTeX: images are saved next to the `.tex` and included (webp/gif are converted to PNG); "Comments only" is available.
 
 ## Changing the app icon
 
@@ -90,12 +154,12 @@ python notion_exporter.py
 
 Tick **LaTeX (.tex)** on the Formats tab. Output compiles with `pdflatex`
 (for Arabic/CJK text use `xelatex`). Emoji are removed automatically; images
-other than PNG/JPG/PDF are skipped with a comment.
+other than PNG/JPG/PDF are converted to PNG.
 
 For whiteboard photos, open the **LaTeX & OCR** tab, paste your own Gemini key
 (<https://aistudio.google.com/>) and tick *Scan images with Gemini Math OCR*.
 The model name box is editable, so you can type any current Gemini model.
-The key is stored in plain text in `~/.notion_pdf_exporter/config.json`.
+The key is stored in the OS keyring (plain text in `config.json` only if you allow it).
 
 ---
 
@@ -162,7 +226,7 @@ pip install -r requirements.txt pyinstaller
 ### Build with PowerShell (recommended)
 ```powershell
 cd C:\Projects\Notion-Exporter
-.\build_exe.ps1
+.\build_exe.ps1            # tests are not run here; CI runs them before every release
 ```
 
 ### Build with Command Prompt
@@ -195,7 +259,8 @@ The **Browser engine** (exact Notion look) requires Chromium:
 ```powershell
 python -m PyInstaller --noconfirm --clean --onefile --windowed `
   --name PageOut-for-Notion --icon icon.ico `
-  --add-data "icon.ico;." --add-data "icon.png;." `
+  --add-data "icon.ico;." --add-data "icon.png;." --add-data "pageout/assets;pageout/assets" `
+  --collect-submodules pageout --collect-all keyring --hidden-import yaml `
   --collect-all playwright --collect-all google.genai --collect-data docx `
   --hidden-import notion_client --hidden-import pypdf --hidden-import PIL.ImageTk `
   notion_exporter.py
@@ -205,8 +270,8 @@ python -m PyInstaller --noconfirm --clean --onefile --windowed `
 
 ## Notes
 
-- The token is **never saved** unless you tick "Remember token" (stored plain-text in `~/.notion_pdf_exporter/config.json`).
-- Notion image URLs expire after ~1 hour — use **Embed** or **Save locally** for reliable exports.
+- The token is **never saved** unless you tick "Remember on this PC": it then goes to the OS keyring (Windows Credential Manager). Plain text in `~/.notion_pdf_exporter/config.json` only if no keyring exists *and* you tick "Allow plain-text storage". Old plain-text configs are migrated on first start.
+- Notion image URLs expire after ~1 hour; the exporter re-fetches a fresh link automatically when a download is refused. **Embed** or **Save locally** are still the most reliable.
 - When using `--onefile`, PyInstaller extracts resources to a temp `_MEIPASS` folder at runtime; `resource_path()` in the script handles this automatically.
 
 ---

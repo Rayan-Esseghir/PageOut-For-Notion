@@ -4,4 +4,6 @@ pypdf>=4.0
 python-docx>=1.0
 pillow>=10.0
 google-genai>=1.0
+keyring>=24          # tokens in the OS keyring
+pyyaml>=6            # pageout.yaml settings files
 # build only:  pip install pyinstaller

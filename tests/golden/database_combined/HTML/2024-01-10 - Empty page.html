@@ -1,0 +1,100 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Empty page</title><style>
+/* ---- PageOut for Notion: Notion-like stylesheet ---- */
+*, *::before, *::after { box-sizing: border-box; }
+:root { --accent: #37352f; --ink: #37352f; --muted: rgba(55,53,47,.65); --line: rgba(55,53,47,.09);
+        --line2: #e9e9e7; --soft: #f7f6f3; --callout: rgba(241,241,239,.6); }
+html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+body {
+  font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif, 'Segoe UI Emoji', 'Apple Color Emoji', 'Noto Color Emoji';
+  max-width: 900px; margin: 2rem auto; padding: 0 1.6rem;
+  color: var(--ink); line-height: 1.5; font-size: 16px; text-align: start;
+  -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; font-kerning: normal;
+  overflow-wrap: break-word;
+}
+/* Arabic / Hebrew paragraphs flow right-to-left automatically */
+p, li, h1, h2, h3, blockquote, summary, td, th, figcaption, .callout-body { unicode-bidi: plaintext; }
+p { margin: .28em 0; orphans: 3; widows: 3; }
+
+/* title + icon */
+.notion-page-icon { font-size: 78px; line-height: 1.1; display: block; text-align: start;
+  margin: 0 0 .12em; user-select: none; }
+.notion-page-icon img { height: 78px; width: auto; display: inline-block; vertical-align: bottom; }
+h1.notion-title { font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; font-size: 2.5rem; font-weight: 700; line-height: 1.2;
+  margin: 0 0 .25em; text-align: start; color: var(--ink); break-after: avoid;  }
+
+/* headings */
+h1, h2, h3 { font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; font-weight: 600; line-height: 1.3; text-align: start;
+  color: var(--accent); break-after: avoid; }
+h1 { font-size: 1.875em; margin: 1.6em 0 .2em; }
+h2 { font-size: 1.5em;   margin: 1.3em 0 .2em; }
+h3 { font-size: 1.25em;  margin: 1.1em 0 .15em; }
+
+a { color: var(--accent); text-decoration: underline; text-decoration-color: rgba(55,53,47,.4);
+    text-decoration-thickness: .05em; text-underline-offset: 2px; }
+strong { font-weight: 600; }
+
+/* cover page */
+.notion-cover-page { display: flex; flex-direction: column; justify-content: center; min-height: 60vh; padding: 3rem 0 2rem; }
+.notion-page-break { page-break-after: always; break-after: page; height: 0; margin: 0; }
+@media print { .notion-cover-page { min-height: 80vh; } }
+
+/* properties (Notion style: plain key / value rows) */
+table.props-table { border-collapse: collapse; margin: .7em 0 1.4em; width: 100%; font-size: .95em;
+  border: none; border-bottom: 1px solid var(--line); }
+table.props-table th { width: 24%; color: var(--muted); font-weight: 400; background: none; text-align: left;
+  padding: .28em .8em .28em 0; border: none; vertical-align: top; }
+table.props-table td { padding: .28em .3em; border: none; vertical-align: top; }
+.props-pills { display: flex; flex-wrap: wrap; gap: .35em; margin: .7em 0 1.3em; }
+.props-pills .pill { display: inline-flex; align-items: center; gap: .35em; background: var(--soft);
+  border-radius: 4px; padding: .12em .6em; font-size: .85em; line-height: 1.5; }
+.props-pills .pill-key { color: var(--muted); }
+dl.props-list { margin: .6em 0 1.5em; display: grid; grid-template-columns: auto 1fr; gap: .2em 1.2em; font-size: .95em; }
+dl.props-list dt { color: var(--muted); white-space: nowrap; }
+dl.props-list dd { margin: 0; }
+
+/* tables (Notion simple table) */
+table { border-collapse: collapse; margin: 1em 0; width: 100%; font-size: .95em; }
+thead { display: table-header-group; } tr { break-inside: avoid; }
+td, th { border: 1px solid var(--line2); padding: .4em .65em; vertical-align: top; text-align: left; }
+table:not(.props-table) th { background: var(--soft); font-weight: 500; }
+
+/* quotes, code, callouts */
+blockquote { border-left: 3px solid currentColor; margin: .6em 0; padding: 0 .9em; font-size: 1.2em; line-height: 1.5; }
+pre { background: var(--soft); border-radius: 4px; padding: 1.5em 1.1em 1.5em 1.7em; overflow: auto;
+  white-space: pre-wrap; word-break: break-word; font-size: .85em; line-height: 1.5; margin: .8em 0; tab-size: 2; }
+code { background: rgba(135,131,120,.15); color: #eb5757; padding: .2em .4em; border-radius: 3px;
+  font-family: 'Cascadia Code', Consolas, 'Courier New', Courier, monospace; font-size: 85%; }
+pre, pre code { font-family: 'Cascadia Code', Consolas, 'Courier New', Courier, monospace; }
+pre code { background: none; color: inherit; padding: 0; font-size: 1em; border-radius: 0; }
+.callout { display: flex; gap: .7em; border-radius: 4px; padding: 1em 1em 1em .8em; margin: .8em 0;
+  background: var(--callout); border: 1px solid var(--line2); }
+.callout .callout-icon { font-size: 1.3em; line-height: 1.4; flex-shrink: 0; }
+.callout .callout-body { flex: 1; min-width: 0; }
+.callout .callout-body > :first-child { margin-top: 0; } .callout .callout-body > :last-child { margin-bottom: 0; }
+details { margin: .3em 0; } summary { cursor: pointer; font-weight: 400; }
+details > *:not(summary) { margin-left: 1.4em; }
+.eq { font-family: 'Cambria Math', 'STIX Two Math', 'Times New Roman', serif; }
+div.eq { text-align: center; margin: .9em 0; overflow-x: auto; }
+
+/* images */
+figure { margin: .8em 0; }
+figure img { max-width: 100%; height: auto; border-radius: 3px; display: block; margin: 0 auto; }
+figcaption { color: var(--muted); font-size: .85em; margin-top: .4em; text-align: center; }
+.maximize-images figure img { width: 100%; object-fit: contain; }
+.one-image-per-page figure { page-break-after: always; break-after: page; }
+
+/* lists */
+ul, ol { padding-left: 1.5em; margin: .2em 0; } li { margin: .1em 0; }
+ul { list-style: disc; } ul ul { list-style: circle; } ul ul ul { list-style: square; }
+ol { list-style: decimal; } ol ol { list-style: lower-alpha; } ol ol ol { list-style: lower-roman; }
+ul.todo { list-style: none; padding-left: .2em; } ul.todo input { accent-color: var(--accent); margin-right: .4em; }
+hr { border: none; border-top: 1px solid var(--line); margin: 1.2em 0; }
+.indent { margin-left: 1.5em; }
+.cols { display: flex; gap: 1.6em; } .col { flex: 1; min-width: 0; }
+section.page { margin-bottom: 3em; } .subpage { margin-top: 2em; }
+
+@media print {
+  body { max-width: none; margin: 0; padding: 0; }
+  pre, figure, .callout, blockquote { break-inside: avoid; }
+}
+</style></head><body><span class="notion-page-icon">📄</span><h1 class="notion-title">Empty page</h1><table class="props-table"><tr><th>Date</th><td>2024-01-10</td></tr><tr><th>Done</th><td>Yes</td></tr><tr><th>Score</th><td>42</td></tr></table></body></html>

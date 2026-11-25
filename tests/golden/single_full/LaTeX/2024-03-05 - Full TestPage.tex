@@ -1,0 +1,114 @@
+\documentclass[11pt,a4paper]{article}
+% Compile with pdflatex (Latin text). For Arabic/CJK use xelatex or lualatex.
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{graphicx}
+\usepackage[normalem]{ulem}
+\usepackage{xcolor}
+\usepackage{hyperref}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    filecolor=magenta,
+    urlcolor=blue,
+    pdftitle={Full: Test/Page?},
+}
+
+\title{Full: Test/Page?}
+\author{}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{center}
+\begin{tabular}{|r|l|}
+  \hline
+  \textbf{Date} & 2024-03-05 \\
+  \hline
+  \textbf{Tags} & alpha, beta \\
+  \hline
+  \textbf{Done} & Yes \\
+  \hline
+  \textbf{Score} & 42 \\
+  \hline
+\end{tabular}
+\end{center}
+\medskip
+
+
+
+\section*{Main heading}
+Plain, \textbf{bold}, \textit{italic}, \texttt{code}, \sout{strike}, \underline{under}, red text, bg. 100\% \$ \& \# \_ \{ \} \textasciitilde{} \textasciicircum{} \textbackslash{} chars.\par\medskip
+External \href{https://example.com/a?b=1\#c}{link} and \href{/aabbccddeeff00112233445566778899}{internal} and inline math $E=mc^2$\par\medskip
+See \href{/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb}{the empty page} and \href{https://www.notion.so/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb}{Empty page}.\par\medskip
+مرحبا بالعالم، هذا نص عربي.\par\medskip
+\begin{itemize}
+  \item Bullet one
+\begin{itemize}
+  \item Nested bullet
+\end{itemize}
+  \item Bullet two
+\end{itemize}
+\begin{enumerate}
+  \item First
+  \item Second
+\end{enumerate}
+\begin{itemize}
+  \item[$\boxtimes$] Done task
+  \item[$\square$] Open task
+\end{itemize}
+\textbf{Toggle title}\par\medskip
+Hidden content\par\medskip
+\textbf{Nested toggle}\par\medskip
+Deep content\par\medskip
+\begin{quote}
+A wise quote.
+\end{quote}
+\begin{quote}
+Callout text
+\end{quote}
+\begin{verbatim}
+% Caption: Code caption
+def f(x):
+    return x < 2 & 1
+\end{verbatim}
+\noindent\rule{\linewidth}{0.4pt}\par\medskip
+\begin{equation*}
+\int_0^1 x^2\,dx = \frac13
+\end{equation*}
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.85\linewidth]{../Images/2024-03-05 - Full TestPage/2024-03-05 - Full TestPage_01.png}
+\caption{Figure one}
+\end{figure}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.85\linewidth]{../Images/2024-03-05 - Full TestPage/2024-03-05 - Full TestPage_02.jpg}
+
+\end{figure}
+
+\begin{center}
+\begin{tabular}{|l|l|}
+\hline
+H1 & H2 \\
+\hline
+a|b & c \& d \\
+\hline
+\end{tabular}
+\end{center}
+Left column\par\medskip
+Right column\par\medskip
+Synced original\par\medskip
+\href{https://example.org/read}{A bookmark}\par\medskip
+\texttt{[Attachment: Attached doc]}\par\medskip
+\subsection*{Sub page}
+Text inside the sub-page.\par\medskip
+\subsection*{Sub heading}
+\textit{[Database: Inner DB]}\par\medskip
+
+\end{document}

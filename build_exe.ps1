@@ -36,6 +36,9 @@ foreach ($f in @("icon.ico", "icon.png")) {
     if (Test-Path $f) { $iconArgs += "--add-data=$f;." }
 }
 
+# -- bundled assets (offline KaTeX) --------------------------------------
+if (-not (Test-Path "pageout/assets/katex/katex.min.js")) { throw "pageout/assets/katex is missing (run tools/vendor_katex.py)." }
+
 # -- arguments ----------------------------------------------------------
 $pyiArgs = @(
     "--noconfirm", "--clean",
@@ -45,6 +48,10 @@ $pyiArgs = @(
 if (-not $Console) { $pyiArgs += "--windowed" }
 $pyiArgs += $iconArgs
 $pyiArgs += @(
+    "--add-data=pageout/assets;pageout/assets",   # bundled KaTeX (offline math)
+    "--collect-submodules=pageout",
+    "--collect-all=keyring",                      # OS keyring backends (Windows Credential Manager)
+    "--hidden-import=yaml",
     # packages with data files / drivers that PyInstaller cannot see on its own
     "--collect-all=playwright",      # bundled Node driver
     "--collect-all=google.genai",

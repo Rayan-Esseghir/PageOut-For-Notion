@@ -1,0 +1,11 @@
+# pageout.yaml - every key of the app's settings works here (see README).
+sources:
+  - https://www.notion.so/your-database-or-page-url
+formats: [pdf, md, html]          # pdf html md txt docx json tex images
+out: ./export
+name_format: "{date} - {title}"
+sub_mode: Inline in parent          # Skip | Inline in parent | Separate files
+md_preset: GFM                      # GFM | Vanilla | Obsidian
+incremental: true                   # skip pages that did not change
+# hooks: [./my_hooks.py]            # see examples/hooks_example.py
+# The token is NOT read from this file: use NOTION_TOKEN or the OS keyring.

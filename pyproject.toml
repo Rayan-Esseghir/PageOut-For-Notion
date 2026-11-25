@@ -1,0 +1,52 @@
+[project]
+name = "pageout"
+version = "1.0.0rc1"
+description = "Export Notion pages to PDF, HTML, Markdown, Text, Word, JSON and LaTeX"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+dependencies = [
+    "notion-client>=2.2",
+    "playwright>=1.40",
+    "pypdf>=4.0",
+    "python-docx>=1.0",
+    "pillow>=10.0",
+    "google-genai>=1.0",
+]
+
+[project.optional-dependencies]
+secure = ["keyring>=24"]          # store tokens in the OS keyring
+yaml = ["pyyaml>=6"]              # pageout.yaml settings files
+dev = ["pytest>=8", "ruff>=0.5", "mypy>=1.10", "keyring>=24", "pyyaml>=6"]
+
+[project.scripts]
+pageout = "pageout.__main__:main"
+
+[tool.setuptools.packages.find]
+include = ["pageout*"]
+
+[tool.setuptools.package-data]
+pageout = ["assets/katex/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = [".", "tests"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+extend-exclude = ["tests/golden"]
+
+[tool.ruff.lint]
+select = ["F", "E7", "E9", "W6", "I"]
+ignore = ["E701", "E702", "E741"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["pageout"]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+warn_unused_ignores = true
+check_untyped_defs = false
+files = ["pageout/core"]

@@ -41,9 +41,18 @@ if exist icon.ico (
 )
 if exist icon.png set "DATA_OPT=%DATA_OPT% --add-data icon.png;."
 
+if not exist pageout\assets\katex\katex.min.js (
+    echo [ERROR] pageout\assets\katex is missing - run tools\vendor_katex.py
+    exit /b 1
+)
+
 python -m PyInstaller --noconfirm --clean --onefile %WIN_OPT% ^
   --name PageOut-for-Notion ^
   %ICON_OPT% %DATA_OPT% ^
+  --add-data "pageout/assets;pageout/assets" ^
+  --collect-submodules pageout ^
+  --collect-all keyring ^
+  --hidden-import yaml ^
   --collect-all playwright ^
   --collect-all google.genai ^
   --collect-data docx ^
