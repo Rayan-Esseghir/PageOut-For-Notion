@@ -663,6 +663,146 @@ class Presenter:
 
         ttk.Button(detail_dialog, text="Close", command=detail_dialog.destroy).pack(pady=10)
 
+    def show_timing_report(self):
+        """Show the export timing report viewer."""
+        dialog = tk.Toplevel(self.root)
+        dialog.title(_("timing_report_title", "Export Timing Report"))
+        dialog.geometry("700x500")
+        dialog.transient(self.root)
+        dialog.grab_set()
+
+        ttk = __import__('tkinter.ttk', fromlist=['*'])
+
+        # Toolbar
+        toolbar = ttk.Frame(dialog)
+        toolbar.pack(fill="x", padx=10, pady=5)
+
+        ttk.Button(toolbar, text=_("timing_report_load", "Load Report…"), command=lambda: self._load_timing_report(text_area)).pack(side="left", padx=5)
+        ttk.Button(toolbar, text="Close", command=dialog.destroy).pack(side="right", padx=5)
+
+        # Text area for report
+        text_area = tk.Text(dialog, wrap="word", padx=10, pady=10, font=("Consolas", 10))
+        text_area.pack(fill="both", expand=True, padx=10, pady=5)
+
+        # Scrollbar
+        scrollbar = ttk.Scrollbar(text_area, orient="vertical", command=text_area.yview)
+        scrollbar.pack(side="right", fill="y")
+        text_area.config(yscrollcommand=scrollbar.set)
+
+        # Try to load timing report from last export or from output folder
+        self._load_last_timing_report(text_area)
+
+    def _load_timing_report(self, text_area):
+        """Load a timing report from a file."""
+        from tkinter import filedialog
+        import json
+
+        file_path = filedialog.askopenfilename(
+            title="Select Timing Report",
+            filetypes=[("JSON files", "*.json"), ("All files", "*.*")],
+            initialdir=self.app.V.get("save_dir", tk.StringVar(value="")).get() if hasattr(self.app, 'V') and self.app.V.get("save_dir") else os.path.expanduser("~"),
+            parent=self.root
+        )
+
+        if not file_path:
+            return
+
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            self._display_timing_report(text_area, data)
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to load timing report: {e}")
+
+    def _load_last_timing_report(self, text_area):
+        """Try to load the timing report from the last export."""
+        import json
+        import os
+
+        # Try to find timing_report.json in the output folder
+        save_dir = self.app.V.get("save_dir", tk.StringVar(value="")).get() if hasattr(self.app, 'V') and self.app.V.get("save_dir") else ""
+        if save_dir:
+            timing_path = os.path.join(save_dir, "timing_report.json")
+            if os.path.exists(timing_path):
+                try:
+                    with open(timing_path, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                    self._display_timing_report(text_area, data)
+                    return
+                except Exception:
+                    pass
+
+        # No timing report found
+        text_area.insert("1.0", _("timing_report_no_data", "No timing data available.\n\nEnable 'Save timing_report.json with export profiling data' in the Output tab to generate timing reports."))
+        text_area.config(state="disabled")
+
+    def _display_timing_report(self, text_area, data: dict):
+        """Display timing report data in the text area."""
+        text_area.config(state="normal")
+        text_area.delete("1.0", "end")
+
+        lines = []
+        lines.append("╔══════════════════════════════════════════════════════════╗")
+        lines.append("║           EXPORT TIMING REPORT                           ║")
+        lines.append("╚══════════════════════════════════════════════════════════╝")
+        lines.append("")
+
+        # Total time
+        total_ms = (
+            data.get("notion_api", {}).get("total_ms", 0) +
+            data.get("images", {}).get("total_ms", 0) +
+            data.get("pdf", {}).get("total_ms", 0) +
+            data.get("merge", {}).get("total_ms", 0) +
+            data.get("other", {}).get("total_ms", 0)
+        )
+        api_wait = data.get("api_wait_ms", 0)
+
+        lines.append(f"{_('timing_report_total', 'Total Time:')} {total_ms:.0f} ms ({total_ms/1000:.2f} s)")
+        if api_wait:
+            lines.append(f"API Rate-limiter Wait: {api_wait:.0f} ms ({api_wait/1000:.2f} s)")
+        lines.append("")
+
+        lines.append(f"{_('timing_report_categories', 'Categories:')}")
+        lines.append("")
+
+        categories = [
+            ("Notion API", "notion_api", "calls"),
+            ("Images", "images", "images"),
+            ("PDF Generation", "pdf", "pages"),
+            ("PDF Merge", "merge", "merges"),
+            ("Other", "other", "ops"),
+        ]
+
+        for label, key, unit in categories:
+            cat = data.get(key, {})
+            count = cat.get("count", 0)
+            total = cat.get("total_ms", 0)
+            avg = cat.get("avg_ms", 0)
+            bytes_dl = cat.get("bytes_downloaded", 0)
+
+            if count > 0:
+                lines.append(f"  {label}:")
+                lines.append(f"    Count:     {count} {unit}")
+                lines.append(f"    Total:     {total:.2f} ms")
+                lines.append(f"    Average:   {avg:.2f} ms/op")
+                if bytes_dl > 0:
+                    mb = bytes_dl / (1024 * 1024)
+                    lines.append(f"    Downloaded: {mb:.2f} MB")
+                lines.append("")
+
+        # Percentage breakdown
+        if total_ms > 0:
+            lines.append("Percentage Breakdown:")
+            for label, key, _ in categories:
+                cat = data.get(key, {})
+                ms = cat.get("total_ms", 0)
+                if ms > 0:
+                    pct = (ms / total_ms) * 100
+                    lines.append(f"  {label}: {pct:.1f}%")
+
+        text_area.insert("1.0", "\n".join(lines))
+        text_area.config(state="disabled")
+
     def do_login(self):
         """Handle login button click."""
         self.app.login_btn.config(state="disabled")

@@ -300,8 +300,16 @@ EN = {
     "menu_load_pages": "Load Pages",
     "menu_preview_names": "Preview Names",
     "menu_export_queue": "Export Queue…",
+    "menu_view_timing_report": "View Export Report…",
     "menu_about": "About…",
     "menu_shortcuts": "Keyboard Shortcuts…",
+
+    # Timing report viewer
+    "timing_report_title": "Export Timing Report",
+    "timing_report_load": "Load Report…",
+    "timing_report_no_data": "No timing data available.",
+    "timing_report_total": "Total Time:",
+    "timing_report_categories": "Categories:",
 
     # Simple/Advanced mode
     "simple_mode": "Simple Mode",

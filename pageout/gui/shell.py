@@ -98,6 +98,7 @@ class ShellUI:
         tools_menu.add_command(label=_("menu_clear_cache"), command=self.presenter.clear_cache)
         tools_menu.add_separator()
         tools_menu.add_command(label=_("menu_export_queue"), accelerator="Ctrl+Q", command=self.presenter.show_queue)
+        tools_menu.add_command(label=_("menu_view_timing_report"), command=self.presenter.show_timing_report)
 
         # Help menu
         help_menu = tk.Menu(self._menu_bar, tearoff=0)
