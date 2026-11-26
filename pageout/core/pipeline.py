@@ -20,9 +20,19 @@ except ImportError:
     from PyPDF2 import PdfMerger  # type: ignore[no-redef]  # fallback
 
 import hashlib
+import time
 from dataclasses import dataclass, field
 
 from pageout.core.assets import detect_ext, download
+from pageout.core.timing import (
+    TimingReport,
+    get_timer,
+    record_api_wait,
+    record_image_bytes,
+    reset_timer,
+    set_api_timing,
+    timer,
+)
 from pageout.core.cache import ExportCache
 from pageout.core.config import (
     DB_EXPORT_MODES,
@@ -62,6 +72,7 @@ from pageout.sources.notion_api import (
     query_all,
     resolve_roots,
     set_api_concurrency,
+    set_api_timing as notion_set_api_timing,
     sort_pages,
     strip_private,
     walk,
@@ -112,9 +123,18 @@ class Exporter:
         self.last_tex = ""
         self._tex_body = ""
         self._lock = threading.RLock()
+        # Initialize timing
+        self.timing = None
 
     def log(self, msg):
         self._log_fn(redact(msg, self._secrets))
+
+    def _init_timing(self):
+        """Initialize timing instrumentation."""
+        reset_timer()  # Reset global timing from any previous run
+        self.timing = get_timer()
+        set_api_timing(self.timing)
+        return self.timing
 
     # ---- sources ----
     def fetch_roots(self):
@@ -381,11 +401,16 @@ class Exporter:
                 imgs.append(img)
         want_opt = embed_pdf or c["fmt_docx"]
 
+        img_count = 0
         def fetch(img):
+            nonlocal img_count
             try:
                 if not img.bytes:
                     data, ctype = self._download(it, img)
                     img.bytes, img.ext = data, detect_ext(img.url, ctype, data)
+                    if self.timing:
+                        img_count += 1
+                        record_image_bytes(len(img.bytes))
                 if want_opt:
                     self._optimize(img)
             except Exception as e:
@@ -394,6 +419,9 @@ class Exporter:
         if imgs:
             with ThreadPoolExecutor(max_workers=min(8, len(imgs))) as ex:  # downloads in parallel
                 list(ex.map(fetch, imgs))
+        # Record image count
+        if self.timing:
+            self.timing.images.count += img_count
         if save_files:
             for img in imgs:
                 if not img.bytes:
@@ -589,6 +617,9 @@ class Exporter:
         )
         inline = c["sub_mode"] == SUB_MODES[1]
 
+        # Initialize timing
+        self._init_timing()
+
         self.log("Reading pages...")
         if documents is not None:
             items = self.plan_documents(documents)
@@ -680,6 +711,7 @@ class Exporter:
                             continue
                         try:
                             if fmt == "pdf":
+                                pdf_start = time.perf_counter()
                                 if use_api_pdf:
                                     self.pdf_api(page, it, path, tmp)
                                 else:
@@ -687,6 +719,10 @@ class Exporter:
                                 self._clean_pdf(path)
                                 made_pdfs.append((it.label, path))
                                 outputs[fmt] = path
+                                if self.timing:
+                                    elapsed_ms = (time.perf_counter() - pdf_start) * 1000
+                                    self.timing.pdf.total_ms += elapsed_ms
+                                    self.timing.pdf.count += 1
                             elif fmt == "html":
                                 body = self.body_html(it, "html", os.path.dirname(path), path)
                                 with open(path, "w", encoding="utf-8") as f:
@@ -797,6 +833,7 @@ class Exporter:
 
         if made_pdfs and c["output_mode"] != OUTPUT_MODES[2]:
             self.log("Merging PDFs...")
+            merge_start = time.perf_counter()
             merger = PdfMerger()
             for title, path in made_pdfs:
                 try:
@@ -806,6 +843,10 @@ class Exporter:
             out = os.path.join(c["save_dir"], name + ".pdf")
             merger.write(out)
             merger.close()
+            if self.timing:
+                elapsed_ms = (time.perf_counter() - merge_start) * 1000
+                self.timing.merge.total_ms += elapsed_ms
+                self.timing.merge.count += 1
             if c["output_mode"] == OUTPUT_MODES[1]:
                 for _, path in made_pdfs:
                     try:
@@ -818,7 +859,7 @@ class Exporter:
                     except OSError:
                         pass
         self.failed[:] = [(redact(a, self._secrets), redact(b, self._secrets)) for a, b in self.failed]
-        return c["save_dir"], total, self.failed
+        return c["save_dir"], total, self.failed, self.timing
 
 
 @dataclass
@@ -830,6 +871,15 @@ class Result:
     failed: list = field(default_factory=list)
     skipped: int = 0
     last_tex: str = ""
+    timing: TimingReport = None
+    profile_timing: bool = False
+
+    @property
+    def timing_summary(self) -> str:
+        """Return the timing summary string."""
+        if self.timing:
+            return self.timing.summary()
+        return "No timing data"
 
 
 def export(
@@ -850,5 +900,14 @@ def export(
     ex = Exporter(
         config, all_props, shown_props, log or (lambda m: None), progress or (lambda i, n: None), cancel, notion, hooks
     )
-    out, total, failed = ex.run(selected_roots, documents)
-    return Result(out, total, failed, ex.skipped, ex.last_tex)
+    out, total, failed, timing = ex.run(selected_roots, documents)
+    profile = config.get("profile_timing", False)
+    result = Result(out, total, failed, ex.skipped, ex.last_tex, timing=timing, profile_timing=profile)
+    # Write timing JSON if profile_timing is enabled
+    if profile and timing:
+        timing_path = os.path.join(out, "timing_report.json")
+        with open(timing_path, "w", encoding="utf-8") as f:
+            f.write(timing.to_json())
+        if log:
+            log(f"Timing report written to: {timing_path}")
+    return result

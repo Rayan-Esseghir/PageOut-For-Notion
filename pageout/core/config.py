@@ -372,6 +372,8 @@ DEFAULTS = {
     "md_preset": MD_PRESETS[0],
     "db_export": DB_EXPORT_MODES[0],
     "allow_plaintext_secrets": False,
+    # profiling (P1)
+    "profile_timing": False,
 }
 
 

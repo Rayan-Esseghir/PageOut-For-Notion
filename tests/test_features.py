@@ -95,7 +95,7 @@ def test_expired_image_link_is_refetched(tmp_path, monkeypatch):
 
     monkeypatch.setattr(pipeline, "download", dl)
     fake = FakeNotion()
-    _, _, failed = run_export(
+    _, _, failed, _ = run_export(
         tmp_path, notion=fake, database=FULL, source_type="Single page", fmt_md=True, img_handling="Save locally & link"
     )
     assert failed == []
@@ -110,7 +110,7 @@ def test_expired_link_that_cannot_be_refreshed_is_reported(tmp_path, monkeypatch
 
     monkeypatch.setattr(pipeline, "download", dl)
     monkeypatch.setattr(pipeline.Exporter, "_fresh_url", lambda self, it, img: "")
-    _, _, failed = run_export(
+    _, _, failed, _ = run_export(
         tmp_path, database=FULL, source_type="Single page", fmt_md=True, img_handling="Save locally & link"
     )
     assert failed and all("image" in f[0] for f in failed)

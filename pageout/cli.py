@@ -155,6 +155,7 @@ def build_parser():
     e.add_argument("--force", action="store_true", help="re-export even if nothing changed")
     e.add_argument("--no-incremental", action="store_true")
     e.add_argument("--no-rewrite-links", action="store_true")
+    e.add_argument("--profile-timing", action="store_true", help="write timing_report.json with export profiling data")
     e.add_argument("-q", "--quiet", action="store_true")
     sub.add_parser("version", help="print the version")
     i = sub.add_parser("init-config", help="write an example pageout.yaml")
@@ -215,6 +216,8 @@ def make_config(args, warn):
         cfg["incremental"] = False
     if args.no_rewrite_links:
         cfg["rewrite_links"] = False
+    if args.profile_timing:
+        cfg["profile_timing"] = True
     if not any(cfg.get("fmt_" + f) for f in ALL_FORMATS):
         raise UsageError("No format selected. Use --format, e.g. --format pdf,md")
     if not str(cfg.get("save_dir", "")).strip():
@@ -280,6 +283,8 @@ def main(argv=None, notion=None, stdout=None, stderr=None):
     msg = f"Exported {res.total - res.skipped} page(s)"
     if res.skipped:
         msg += f", {res.skipped} unchanged (skipped)"
+    if res.timing and res.timing.summary():
+        msg += f" · {res.timing.summary()}"
     print(f"{msg} -> {res.out_dir}", file=out)
     for what, why in res.failed[:20]:
         print(f"  problem: {what}: {why}", file=err)

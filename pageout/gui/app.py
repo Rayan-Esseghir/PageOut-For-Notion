@@ -61,22 +61,9 @@ from pageout.ocr.gemini import _GENAI_AVAILABLE
 from pageout.renderers.html import _HEX_RE
 from pageout.renderers.pdf import login_to_notion
 from pageout.sources.notion_api import load_property_names, page_fields
-
-
-def _windows_integration():
-    """Sharp UI on HiDPI screens + own taskbar identity (so the custom icon shows)."""
-    if sys.platform != "win32":
-        return
-    try:
-        import ctypes
-
-        try:
-            ctypes.windll.shcore.SetProcessDpiAwareness(1)
-        except Exception:
-            ctypes.windll.user32.SetProcessDPIAware()
-        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("PageOut.ForNotion.App")
-    except Exception:
-        pass
+from pageout.gui.i18n import EN, get_string, _
+from pageout.gui.widgets import ScrollFrame, CheckList, FontPicker
+from pageout.gui.theme import ThemeManager, HiDPISupport
 
 
 def _make_programmatic_icon():
@@ -137,197 +124,6 @@ def apply_icon(root):
         root._icon_ref = ph
 
 
-class ScrollFrame(ttk.Frame):
-    """A vertically scrollable page. Mouse-wheel routing is done globally by App._on_wheel."""
-
-    def __init__(self, parent):
-        super().__init__(parent)
-        bg = ttk.Style().lookup("TFrame", "background") or "#f0f0f0"
-        self.canvas = tk.Canvas(self, highlightthickness=0, borderwidth=0, bg=bg, yscrollincrement=20)
-        sb = ttk.Scrollbar(self, orient="vertical", command=self.canvas.yview)
-        self.inner = ttk.Frame(self.canvas)
-        self._win = self.canvas.create_window((0, 0), window=self.inner, anchor="nw")
-        self.inner.bind("<Configure>", lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
-        self.canvas.bind("<Configure>", lambda e: self.canvas.itemconfigure(self._win, width=e.width))
-        self.canvas.configure(yscrollcommand=sb.set)
-        self.canvas.pack(side="left", fill="both", expand=True)
-        sb.pack(side="right", fill="y")
-        self.canvas._wheel_canvas = self.canvas
-
-
-class CheckList(ttk.Frame):
-    """A scrollable list with a checkbox in front of every row."""
-
-    def __init__(self, parent, height=190, empty_text="Nothing loaded yet."):
-        super().__init__(parent)
-        self.empty_text = empty_text
-        self.canvas = tk.Canvas(
-            self, height=height, highlightthickness=1, highlightbackground="#c4c4c4", bg="white", yscrollincrement=20
-        )
-        sb = ttk.Scrollbar(self, orient="vertical", command=self.canvas.yview)
-        self.inner = tk.Frame(self.canvas, bg="white")
-        self._win = self.canvas.create_window((0, 0), window=self.inner, anchor="nw")
-        self.inner.bind("<Configure>", lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
-        self.canvas.bind("<Configure>", lambda e: self.canvas.itemconfigure(self._win, width=e.width))
-        self.canvas.configure(yscrollcommand=sb.set)
-        self.canvas.pack(side="left", fill="both", expand=True)
-        sb.pack(side="right", fill="y")
-        self.canvas._wheel_canvas = self.canvas
-        self.vars, self.labels = [], []
-        self.info = tk.StringVar()
-        self.set_items([])
-
-    def _update(self, *_):
-        n = sum(1 for v in self.vars if v.get())
-        self.info.set(f"{n} of {len(self.vars)} selected" if self.vars else "")
-
-    def set_items(self, labels, checked=True):
-        for w in self.inner.winfo_children():
-            w.destroy()
-        self.vars, self.labels = [], list(labels)
-        if not labels:
-            tk.Label(self.inner, text=self.empty_text, bg="white", fg="#888888", anchor="w").pack(
-                fill="x", padx=8, pady=8
-            )
-        for lab in labels:
-            v = tk.BooleanVar(value=checked)
-            v.trace_add("write", self._update)
-            self.vars.append(v)
-            tk.Checkbutton(
-                self.inner,
-                text=lab,
-                variable=v,
-                bg="white",
-                activebackground="#eaf2ff",
-                anchor="w",
-                justify="left",
-                relief="flat",
-                borderwidth=0,
-            ).pack(fill="x", padx=4, pady=0)
-        self.canvas.yview_moveto(0)
-        self._update()
-
-    def select_all(self, flag=True):
-        for v in self.vars:
-            v.set(flag)
-
-    def selected_indices(self):
-        return [i for i, v in enumerate(self.vars) if v.get()]
-
-    def selected_labels(self):
-        return [self.labels[i] for i in self.selected_indices()]
-
-
-_GENERIC_FONT_ALIAS = {"Sans-serif": "Helvetica", "Serif": "Times", "Monospace": "Courier"}
-
-
-class FontPicker(tk.Toplevel):
-    """Font chooser where every font name is shown in its own typeface."""
-
-    SAMPLE = "The quick brown fox 0123456789  —  مرحبا بالعالم"
-
-    def __init__(self, app, current, allow_same, on_pick):
-        super().__init__(app.root)
-        self.app, self.on_pick, self.current = app, on_pick, current
-        self.title("Choose a font")
-        self.geometry("500x600")
-        self.transient(app.root)
-        self.entries = []  # (name or None, display)
-        names = ([SAME_AS_BODY] if allow_same else []) + ["Sans-serif", "Serif", "Monospace"]
-        self.sections = [("Generic", names)]
-        cat = [n for n, _, _ in FONT_CATALOG]
-        self.sections.append(
-            ("Recommended  (grey = not installed on this PC; Google Fonts need the option in the Design tab)", cat)
-        )
-        self.sections.append(
-            ("Installed on this PC", [f for f in app.font_values if f not in cat and f not in _GENERIC_FONT_ALIAS])
-        )
-        top = ttk.Frame(self)
-        top.pack(fill="x", padx=10, pady=(10, 4))
-        ttk.Label(top, text="Search:").pack(side="left")
-        self.q = tk.StringVar()
-        ent = ttk.Entry(top, textvariable=self.q)
-        ent.pack(side="left", fill="x", expand=True, padx=6)
-        ent.focus_set()
-        self.q.trace_add("write", lambda *_: self.fill())
-        mid = ttk.Frame(self)
-        mid.pack(fill="both", expand=True, padx=10, pady=4)
-        self.txt = tk.Text(
-            mid, wrap="none", cursor="arrow", bg="white", relief="solid", borderwidth=1, spacing1=3, spacing3=3
-        )
-        sb = ttk.Scrollbar(mid, command=self.txt.yview)
-        self.txt.config(yscrollcommand=sb.set)
-        self.txt.pack(side="left", fill="both", expand=True)
-        sb.pack(side="right", fill="y")
-        self.txt.tag_configure("head", font=("", 9, "bold"), foreground="#6b7280", spacing1=8)
-        self.txt.tag_configure("pick", background="#cfe3ff")
-        self.txt.tag_configure("web", foreground="#8a8f98")
-        self.txt.bind("<Button-1>", self.on_click)
-        self.txt.bind("<Double-Button-1>", lambda e: (self.on_click(e), self.use()))
-        self.preview = tk.Label(
-            self, text=self.SAMPLE, bg="white", relief="solid", borderwidth=1, height=2, wraplength=470
-        )
-        self.preview.pack(fill="x", padx=10, pady=4)
-        bt = ttk.Frame(self)
-        bt.pack(fill="x", padx=10, pady=(2, 10))
-        ttk.Button(bt, text="Use this font", command=self.use).pack(side="right")
-        ttk.Button(bt, text="Cancel", command=self.destroy).pack(side="right", padx=6)
-        self.chosen = current
-        self.fill()
-        self.grab_set()
-
-    def family_for(self, name):
-        fam = _GENERIC_FONT_ALIAS.get(name, name)
-        return fam if (fam in self.app.installed or fam in _GENERIC_FONT_ALIAS.values()) else None
-
-    def fill(self):
-        q = self.q.get().strip().lower()
-        t = self.txt
-        t.config(state="normal")
-        t.delete("1.0", "end")
-        self.lines = {}
-        n = 0
-        for title, items in self.sections:
-            items = [x for x in items if q in x.lower()]
-            if not items:
-                continue
-            t.insert("end", title + "\n", "head")
-            for name in items:
-                tag = "f%d" % n
-                n += 1
-                fam = self.family_for(name)
-                if fam:
-                    t.tag_configure(tag, font=(fam, 13))
-                    t.insert("end", "  " + name + "\n", tag)
-                else:
-                    t.tag_configure(tag, font=("", 11))
-                    t.insert("end", "  " + name + "\n", (tag, "web"))
-                self.lines[int(t.index("end-2l").split(".")[0])] = name
-        t.config(state="disabled")
-        self.mark()
-
-    def mark(self):
-        self.txt.tag_remove("pick", "1.0", "end")
-        for ln, name in self.lines.items():
-            if name == self.chosen:
-                self.txt.tag_add("pick", f"{ln}.0", f"{ln}.end+1c")
-                self.txt.see(f"{ln}.0")
-        fam = self.family_for(self.chosen) if self.chosen else None
-        self.preview.config(font=(fam, 15) if fam else ("", 12))
-
-    def on_click(self, e):
-        ln = int(self.txt.index(f"@{e.x},{e.y}").split(".")[0])
-        if ln in self.lines:
-            self.chosen = self.lines[ln]
-            self.mark()
-        return "break"
-
-    def use(self):
-        if self.chosen:
-            self.on_pick(self.chosen)
-        self.destroy()
-
-
 class App:
     def __init__(self):
         self.cfg0 = load_config()
@@ -338,8 +134,15 @@ class App:
         self.root.minsize(700, 560)
         self.root.resizable(True, True)
 
+        # Enable HiDPI support
+        HiDPISupport.enable(self.root)
+
         # Apply custom icon (removes default Tkinter feather)
         apply_icon(self.root)
+
+        # Initialize theme manager
+        self.theme = ThemeManager(self.root)
+        self.theme.apply_theme("light")
 
         self.V = {}
         for key, default in DEFAULTS.items():
@@ -364,6 +167,7 @@ class App:
         self.loaded_props, self.loaded_pages, self.loaded_source = [], [], ""
         self.q = queue.Queue()
         self.cancel = threading.Event()
+        self.last_latex_text = None
         self.build()
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
         self.root.after(100, self.poll)
@@ -455,10 +259,13 @@ class App:
                     failed = item[3]
                     last_tex = item[4] if len(item) > 4 else ""
                     skipped = item[5] if len(item) > 5 else 0
+                    timing_summary = item[6] if len(item) > 6 else None
                     self.set_running(False)
                     text = f"Exported {count - skipped} page(s)."
                     if skipped:
                         text += f"\n{skipped} unchanged page(s) skipped (tick “Force full re-export” to redo them)."
+                    if timing_summary:
+                        text += f"\n\nTiming: {timing_summary}"
                     text += f"\n\n{out}"
                     if last_tex:
                         self.last_latex_text = last_tex
@@ -555,7 +362,8 @@ class App:
                     all_props=self.loaded_props,
                     shown_props=shown,
                 )
-                self.q.put(("done", res.out_dir, res.total, res.failed, res.last_tex, res.skipped))
+                timing_summary = res.timing.summary() if res.timing else None
+                self.q.put(("done", res.out_dir, res.total, res.failed, res.last_tex, res.skipped, timing_summary))
             except Cancelled:
                 self.q.put(("cancelled",))
             except Exception as e:
@@ -1264,6 +1072,7 @@ class App:
         self.tick(g, "skip_existing", "Skip files already exported (resume an interrupted export)")
         self.field(g, "Retries on failure", self.spin(g, "retries", 0, 5))
         self.field(g, "Extra wait per page (s)", self.spin(g, "extra_wait", 0, 60, 0.5), "Browser engine only.")
+        self.tick(g, "profile_timing", "Save timing_report.json with export profiling data")
 
         # ---- bottom bar ----
         run = ttk.Frame(self.root)

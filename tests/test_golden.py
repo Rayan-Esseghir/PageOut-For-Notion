@@ -95,7 +95,7 @@ def collect(root: Path):
 
 @pytest.mark.parametrize("name", list(SCENARIOS))
 def test_golden(name, tmp_path):
-    _, total, failed = run_export(tmp_path, **SCENARIOS[name])
+    _, total, failed, _ = run_export(tmp_path, **SCENARIOS[name])
     assert failed == [], failed
     got = collect(tmp_path)
     assert got, "export produced no files"
@@ -114,7 +114,7 @@ def test_golden(name, tmp_path):
 
 def test_docx_smoke(tmp_path):
     docx = pytest.importorskip("docx")
-    _, _, failed = run_export(
+    _, _, failed, _ = run_export(
         tmp_path, database=FULL, source_type="Single page", sub_mode="Inline in parent", fmt_docx=True
     )
     assert failed == []
@@ -166,7 +166,7 @@ def test_failure_in_one_page_does_not_abort(tmp_path, monkeypatch):
         return real(notion, block_id, cache)
 
     monkeypatch.setattr(pipeline, "build_tree", flaky)
-    _, total, failed = run_export(
+    _, total, failed, _ = run_export(
         tmp_path, database=__import__("fake_notion").DB_ID, source_type="Auto-detect", fmt_md=True
     )
     assert total == 2 and len(failed) == 1 and "Empty page" in failed[0][0]
@@ -175,7 +175,7 @@ def test_failure_in_one_page_does_not_abort(tmp_path, monkeypatch):
 
 def test_separate_subpages_mode(tmp_path):
     """Sub-pages as their own files (raw-tree scan in plan())."""
-    _, total, failed = run_export(
+    _, total, failed, _ = run_export(
         tmp_path, database=FULL, source_type="Single page", sub_mode="Separate files", fmt_md=True
     )
     assert failed == [] and total == 2

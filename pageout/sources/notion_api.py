@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 from pageout.core.naming import format_date
 
 _API_SEM = threading.Semaphore(3)  # Notion allows ~3 requests/second on average
+_api_timing = None  # Will be set by pipeline
 
 
 def set_api_concurrency(n):
@@ -15,12 +16,25 @@ def set_api_concurrency(n):
     _API_SEM = threading.Semaphore(max(1, int(n)))
 
 
+def set_api_timing(timing):
+    """Set the timing module for API call instrumentation."""
+    global _api_timing
+    _api_timing = timing
+
+
 def api(fn, **kw):
     """Call the Notion API, retrying on rate limits / temporary errors (thread-safe)."""
+    global _api_timing
     for attempt in range(7):
+        api_start = time.perf_counter()
         try:
             with _API_SEM:
-                return fn(**kw)
+                result = fn(**kw)
+                if _api_timing:
+                    elapsed_ms = (time.perf_counter() - api_start) * 1000
+                    _api_timing.notion_api.total_ms += elapsed_ms
+                    _api_timing.notion_api.count += 1
+                return result
         except Exception as e:
             s = str(e).lower()
             temp = any(
@@ -32,8 +46,14 @@ def api(fn, **kw):
                     wait = max(wait, float(getattr(e, "headers", {}).get("retry-after")))
                 except Exception:
                     pass
+                if _api_timing:
+                    _api_timing.api_wait_ms += wait * 1000
                 time.sleep(wait)
                 continue
+            if _api_timing:
+                elapsed_ms = (time.perf_counter() - api_start) * 1000
+                _api_timing.notion_api.total_ms += elapsed_ms
+                _api_timing.notion_api.count += 1
             raise
 
 
