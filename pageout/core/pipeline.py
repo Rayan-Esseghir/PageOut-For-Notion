@@ -672,17 +672,81 @@ class Exporter:
         hide_names = [n for n in self.all_props if n not in self.shown_props] if self.all_props else []
         made_pdfs, combined_html, combined_md, made_tex = [], [], [], []
         tmp = tempfile.mkdtemp(prefix="notion_export_")
-        pw = browser = ctx = page = None
+        pw = browser = ctx = None
         try:
             if "pdf" in formats:
                 pw = sync_playwright().start()
                 pcfg = dict(c, use_login=bool(c["use_login"]) and not use_api_pdf)
                 browser, ctx = launch_context(pw, pcfg)
-                page = ctx.new_page()
 
             html_root = os.path.join(c["save_dir"], FOLDERS["html"])
             md_root = os.path.join(c["save_dir"], FOLDERS["md"])
             tex_root = os.path.join(c["save_dir"], FOLDERS["tex"])
+
+            # Determine PDF workers for parallel processing
+            pdf_workers = max(1, min(int(c.get("workers", 4)), total)) if "pdf" in formats else 1
+            pdf_pool = ThreadPoolExecutor(max_workers=pdf_workers) if "pdf" in formats else None
+            pdf_futures = {}
+
+            def run_pdf_api(pcfg, it, path, hide_names, tmp_dir):
+                """Run PDF via API engine in a worker thread - creates own Playwright and browser."""
+                pdf_start = time.perf_counter()
+                thread_pw = thread_browser = thread_ctx = thread_page = None
+                try:
+                    # Disable use_login for parallel workers (persistent context not thread-safe)
+                    worker_cfg = dict(pcfg, use_login=False)
+                    thread_pw = sync_playwright().start()
+                    thread_browser, thread_ctx = launch_context(thread_pw, worker_cfg)
+                    thread_page = thread_ctx.new_page()
+                    self.pdf_api(thread_page, it, path, tmp_dir)
+                    self._clean_pdf(path)
+                finally:
+                    for obj in (thread_page, thread_ctx, thread_browser):
+                        try:
+                            if obj:
+                                obj.close()
+                        except Exception:
+                            pass
+                    if thread_pw:
+                        try:
+                            thread_pw.stop()
+                        except Exception:
+                            pass
+                if self.timing:
+                    elapsed_ms = (time.perf_counter() - pdf_start) * 1000
+                    with self._lock:
+                        self.timing.pdf.total_ms += elapsed_ms
+                        self.timing.pdf.count += 1
+
+            def run_pdf_browser(pcfg, it, path, hide_names, tmp_dir):
+                """Run PDF via Browser engine in a worker thread - creates own Playwright and browser."""
+                pdf_start = time.perf_counter()
+                thread_pw = thread_browser = thread_ctx = thread_page = None
+                try:
+                    # Disable use_login for parallel workers (persistent context not thread-safe)
+                    worker_cfg = dict(pcfg, use_login=False)
+                    thread_pw = sync_playwright().start()
+                    thread_browser, thread_ctx = launch_context(thread_pw, worker_cfg)
+                    thread_page = thread_ctx.new_page()
+                    self.pdf_browser(thread_page, it, path, hide_names)
+                    self._clean_pdf(path)
+                finally:
+                    for obj in (thread_page, thread_ctx, thread_browser):
+                        try:
+                            if obj:
+                                obj.close()
+                        except Exception:
+                            pass
+                    if thread_pw:
+                        try:
+                            thread_pw.stop()
+                        except Exception:
+                            pass
+                if self.timing:
+                    elapsed_ms = (time.perf_counter() - pdf_start) * 1000
+                    with self._lock:
+                        self.timing.pdf.total_ms += elapsed_ms
+                        self.timing.pdf.count += 1
 
             for i, it in enumerate(items, 1):
                 if self.cancel.is_set():
@@ -711,18 +775,12 @@ class Exporter:
                             continue
                         try:
                             if fmt == "pdf":
-                                pdf_start = time.perf_counter()
+                                # Submit PDF generation to thread pool for parallel processing
                                 if use_api_pdf:
-                                    self.pdf_api(page, it, path, tmp)
+                                    future = pdf_pool.submit(run_pdf_api, pcfg, it, path, hide_names, tmp)
                                 else:
-                                    self.pdf_browser(page, it, path, hide_names)
-                                self._clean_pdf(path)
-                                made_pdfs.append((it.label, path))
-                                outputs[fmt] = path
-                                if self.timing:
-                                    elapsed_ms = (time.perf_counter() - pdf_start) * 1000
-                                    self.timing.pdf.total_ms += elapsed_ms
-                                    self.timing.pdf.count += 1
+                                    future = pdf_pool.submit(run_pdf_browser, pcfg, it, path, hide_names, tmp)
+                                pdf_futures[it.id] = (future, it, path)
                             elif fmt == "html":
                                 body = self.body_html(it, "html", os.path.dirname(path), path)
                                 with open(path, "w", encoding="utf-8") as f:
@@ -789,6 +847,17 @@ class Exporter:
                         raise
                     self.failed.append((it.label, str(e).splitlines()[0][:100] if str(e) else "error"))
                     self.log(f"[{i}/{total}] FAILED: {it.label}")
+
+            # Wait for all PDF futures to complete
+            if pdf_pool:
+                for fid, (future, it, path) in pdf_futures.items():
+                    try:
+                        future.result()
+                        made_pdfs.append((it.label, path))
+                    except Exception as e:
+                        self.failed.append((f"{it.label} [pdf]", str(e).splitlines()[0][:100] if str(e) else "error"))
+                        self.log(f"FAILED pdf: {it.label}")
+                pdf_pool.shutdown(wait=True)
         finally:
             if cache is not None:
                 cache.save()
