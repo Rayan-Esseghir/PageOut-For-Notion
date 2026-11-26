@@ -260,6 +260,269 @@ class Frame(ttk.Frame):
         return label
 
 
+class SidebarNav(ttk.Frame):
+    """Sidebar navigation widget replacing horizontal tabs."""
+
+    def __init__(self, parent, items: List[Tuple[str, str]], command: Callable, **kwargs):
+        """
+        Args:
+            parent: Parent widget
+            items: List of (key, label) tuples
+            command: Callback function(key) when item is selected
+        """
+        super().__init__(parent, **kwargs)
+        self.items = items
+        self.command = command
+        self.current_key = None
+        self.buttons = {}
+        self._build()
+        self._configure_style()
+
+    def _configure_style(self):
+        """Configure sidebar button style."""
+        style = ttk.Style()
+        try:
+            style.configure("Sidebar.TButton", anchor="w", padding=(12, 8), font=("", 10))
+            style.map("Sidebar.TButton",
+                background=[("pressed", "#dbeafe"), ("active", "#eff6ff")],
+                foreground=[("pressed", "#1d4ed8"), ("active", "#2563eb")]
+            )
+        except Exception:
+            pass
+
+    def _build(self):
+        """Build the sidebar navigation."""
+        for key, label in self.items:
+            btn = ttk.Button(
+                self,
+                text=label,
+                style="Sidebar.TButton",
+                command=lambda k=key: self._on_select(k),
+            )
+            btn.pack(fill="x", padx=4, pady=2)
+            self.buttons[key] = btn
+
+    def _on_select(self, key: str):
+        """Handle item selection."""
+        if key == self.current_key:
+            return
+        self.current_key = key
+        self._update_selection()
+        if self.command:
+            self.command(key)
+
+    def _update_selection(self):
+        """Update visual selection state."""
+        for key, btn in self.buttons.items():
+            if key == self.current_key:
+                btn.state(["pressed"])
+            else:
+                btn.state(["!pressed"])
+
+    def select(self, key: str):
+        """Programmatically select an item."""
+        if key in self.buttons:
+            self._on_select(key)
+
+    def get_selection(self) -> Optional[str]:
+        """Get currently selected key."""
+        return self.current_key
+
+
+class ThemeSelector(ttk.Frame):
+    """Theme selector widget (Light/Dark/System) with variable binding."""
+
+    def __init__(self, parent, variable: tk.Variable, on_change: Optional[Callable] = None, **kwargs):
+        super().__init__(parent, **kwargs)
+        self.variable = variable
+        self.on_change = on_change
+        self._build()
+
+    def _build(self):
+        ttk.Label(self, text=_("theme_label")).pack(side="left", padx=(0, 8))
+        for value, label in [("light", _("theme_light")), ("dark", _("theme_dark")), ("system", _("theme_system"))]:
+            ttk.Radiobutton(
+                self,
+                text=label,
+                variable=self.variable,
+                value=value,
+                command=self._on_change,
+            ).pack(side="left", padx=4)
+
+    def _on_change(self):
+        if self.on_change:
+            self.on_change(self.variable.get())
+
+
+class UIScaleSelector(ttk.Frame):
+    """UI Scale selector widget with variable binding."""
+
+    def __init__(self, parent, variable: tk.Variable, on_change: Optional[Callable] = None, **kwargs):
+        super().__init__(parent, **kwargs)
+        self.variable = variable
+        self.on_change = on_change
+        self._build()
+
+    def _build(self):
+        ttk.Label(self, text=_("ui_scale")).pack(side="left", padx=(0, 8))
+        scale = ttk.Scale(
+            self,
+            from_=0.8,
+            to=1.5,
+            variable=self.variable,
+            orient="horizontal",
+            length=120,
+            command=self._on_scale_change,
+        )
+        scale.pack(side="left", padx=4)
+        self.value_label = ttk.Label(self, text=f"{self.variable.get():.1f}x")
+        self.value_label.pack(side="left", padx=4)
+
+    def _on_scale_change(self, value):
+        scale_val = float(value)
+        self.value_label.config(text=f"{scale_val:.1f}x")
+        if self.on_change:
+            self.on_change(scale_val)
+
+
+class ModeToggle(ttk.Frame):
+    """Simple/Advanced mode toggle widget."""
+
+    def __init__(self, parent, variable: tk.Variable, on_change: Optional[Callable] = None, **kwargs):
+        super().__init__(parent, **kwargs)
+        self.variable = variable
+        self.on_change = on_change
+        self._build()
+
+    def _build(self):
+        ttk.Label(self, text=_("mode_toggle")).pack(side="left", padx=(0, 8))
+        ttk.Radiobutton(
+            self,
+            text=_("simple_mode"),
+            variable=self.variable,
+            value="simple",
+            command=self._on_change,
+        ).pack(side="left", padx=4)
+        ttk.Radiobutton(
+            self,
+            text=_("advanced_mode"),
+            variable=self.variable,
+            value="advanced",
+            command=self._on_change,
+        ).pack(side="left")
+
+    def _on_change(self):
+        if self.on_change:
+            self.on_change(self.variable.get())
+
+
+class ThemeSelector(ttk.Frame):
+    """Theme selector widget (Light/Dark/System)."""
+
+    def __init__(self, parent, theme_manager, on_change: Optional[Callable] = None, **kwargs):
+        super().__init__(parent, **kwargs)
+        self.theme_manager = theme_manager
+        self.on_change = on_change
+        self.variable = tk.StringVar(value=theme_manager.current_theme)
+        self._build()
+
+    def _build(self):
+        ttk.Label(self, text=_("theme_label")).pack(side="left", padx=(0, 8))
+        for value, label in [("light", _("theme_light")), ("dark", _("theme_dark")), ("system", _("theme_system"))]:
+            ttk.Radiobutton(
+                self,
+                text=label,
+                variable=self.variable,
+                value=value,
+                command=self._on_change,
+            ).pack(side="left", padx=4)
+
+    def _on_change(self):
+        theme = self.variable.get()
+        self.theme_manager.apply_theme(theme)
+        if self.on_change:
+            self.on_change(theme)
+
+
+class UIScaleSelector(ttk.Frame):
+    """UI Scale selector widget."""
+
+    def __init__(self, parent, theme_manager, on_change: Optional[Callable] = None, **kwargs):
+        super().__init__(parent, **kwargs)
+        self.theme_manager = theme_manager
+        self.on_change = on_change
+        self.variable = tk.DoubleVar(value=theme_manager.ui_scale)
+        self._build()
+
+    def _build(self):
+        ttk.Label(self, text=_("ui_scale")).pack(side="left", padx=(0, 8))
+        scale = ttk.Scale(
+            self,
+            from_=0.8,
+            to=1.5,
+            variable=self.variable,
+            orient="horizontal",
+            length=120,
+            command=self._on_scale_change,
+        )
+        scale.pack(side="left", padx=4)
+        self.value_label = ttk.Label(self, text=f"{self.variable.get():.1f}x")
+        self.value_label.pack(side="left", padx=4)
+
+    def _on_scale_change(self, value):
+        scale_val = float(value)
+        self.value_label.config(text=f"{scale_val:.1f}x")
+        self.theme_manager.set_ui_scale(scale_val)
+        if self.on_change:
+            self.on_change(scale_val)
+
+
+class ToolTip:
+    """Enhanced tooltip for widgets."""
+
+    def __init__(self, widget: tk.Widget, text: str, delay: int = 500):
+        self.widget = widget
+        self.text = text
+        self.delay = delay
+        self.tooltip = None
+        self.after_id = None
+        self._bind_events()
+
+    def update_delay(self, delay: int):
+        """Update the tooltip delay."""
+        self.delay = delay
+
+    def _bind_events(self):
+        self.widget.bind("<Enter>", self._on_enter)
+        self.widget.bind("<Leave>", self._on_leave)
+        self.widget.bind("<ButtonPress>", self._on_leave)
+
+    def _on_enter(self, event):
+        self.after_id = self.widget.after(self.delay, self._show_tooltip)
+
+    def _on_leave(self, event):
+        if self.after_id:
+            self.widget.after_cancel(self.after_id)
+            self.after_id = None
+        self._hide_tooltip()
+
+    def _show_tooltip(self):
+        if self.tooltip:
+            return
+        x = self.widget.winfo_rootx() + 10
+        y = self.widget.winfo_rooty() + self.widget.winfo_height() + 10
+        self.tooltip = tk.Toplevel(self.widget)
+        self.tooltip.wm_overrideredirect(True)
+        self.tooltip.wm_geometry(f"+{x}+{y}")
+        label = tk.Label(self.tooltip, text=self.text, background="#ffffcc", relief="solid", borderwidth=1, padx=4, pady=2)
+        label.pack()
+
+    def _hide_tooltip(self):
+        if self.tooltip:
+            self.tooltip.destroy()
+            self.tooltip = None
+
+
 def add_font_field(
     g: Any, key: str, label_text: str, app: Any, allow_same: bool = False, hint: Optional[str] = None
 ):
@@ -397,24 +660,14 @@ class ScrollableFrame(ttk.Frame):
         return self.inner
 
 
-def create_tool_tip(widget: tk.Widget, text: str):
+def create_tool_tip(widget: tk.Widget, text: str, delay: int = 500, app=None):
     """Create a tool tip for a widget."""
-
-    def enter(event):
-        tooltip = tk.Toplevel(widget)
-        tooltip.wm_overrideredirect(True)
-        tooltip.wm_geometry(f"+{event.x_root + 10}+{event.y_root + 10}")
-        label = tk.Label(tooltip, text=text, background="#ffffcc", relief="solid", borderwidth=1)
-        label.pack()
-
-    def leave(event):
-        try:
-            tooltip.destroy()
-        except Exception:
-            pass
-
-    widget.bind("<Enter>", enter)
-    widget.bind("<Leave>", leave)
+    tooltip = ToolTip(widget, text, delay)
+    if app is not None:
+        if not hasattr(app, '_tooltips'):
+            app._tooltips = []
+        app._tooltips.append(tooltip)
+    return tooltip
 
 
 def bind_enter_leave(
@@ -424,6 +677,10 @@ def bind_enter_leave(
 ):
     """Bind enter/leave events to a widget for tool tips or actions."""
     if enter_text:
-        widget.bind("<Enter>", lambda e: create_tool_tip(widget, enter_text))
+        ToolTip(widget, enter_text)
     if leave_action:
         widget.bind("<Leave>", lambda e: leave_action(e))
+
+
+# Import i18n for widgets that need it
+from pageout.gui.i18n import get_string as _

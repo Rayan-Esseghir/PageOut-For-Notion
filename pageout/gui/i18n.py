@@ -29,6 +29,7 @@ EN = {
     "open_integrations": "Open integrations page ↗",
     "allow_plaintext": "Allow plain-text storage if no OS keyring is available",
     "notion_connection": "Notion connection",
+    "saved_source": "Saved source",
     "database_page_link": "Database / page link",
     "it_is_a": "It is a…",
     "private_pages": "Private pages — Browser PDF engine only",
@@ -267,27 +268,97 @@ EN = {
 
     # Font families
     "same_as_body": "Same as body",
+
+    # === U2: Look & Navigation ===
+    # Sidebar navigation
+    "sidebar_source": "1  Source",
+    "sidebar_pages": "2  Pages",
+    "sidebar_formats": "3  Formats",
+    "sidebar_design": "4  Design",
+    "sidebar_images": "5  Images",
+    "sidebar_pdf": "6  PDF",
+    "sidebar_latex": "7  LaTeX & AI",
+    "sidebar_output": "8  Output",
+
+    # Menu bar
+    "menu_file": "File",
+    "menu_profiles": "Profiles",
+    "menu_tools": "Tools",
+    "menu_help": "Help",
+    "menu_new": "New",
+    "menu_open_config": "Open Config Folder",
+    "menu_save_profile": "Save Profile…",
+    "menu_load_profile": "Load Profile…",
+    "menu_manage_profiles": "Manage Profiles…",
+    "menu_export_settings": "Export Settings…",
+    "menu_import_settings": "Import Settings…",
+    "menu_preferences": "Preferences…",
+    "menu_exit": "Exit",
+    "menu_validate": "Validate Settings",
+    "menu_clear_cache": "Clear Cache",
+    "menu_load_props": "Load Properties",
+    "menu_load_pages": "Load Pages",
+    "menu_preview_names": "Preview Names",
+    "menu_export_queue": "Export Queue…",
+    "menu_about": "About…",
+    "menu_shortcuts": "Keyboard Shortcuts…",
+
+    # Simple/Advanced mode
+    "simple_mode": "Simple Mode",
+    "advanced_mode": "Advanced Mode",
+    "mode_toggle": "Mode:",
+
+    # Theme switching
+    "theme_light": "Light",
+    "theme_dark": "Dark",
+    "theme_system": "System",
+    "theme_label": "Theme:",
+
+    # UI Scale
+    "ui_scale": "UI Scale:",
+
+    # Status bar
+    "status_ready": "Ready",
+    "status_exporting": "Exporting…",
+    "status_cancelled": "Cancelled",
+
+    # Window state
+    "window_geometry": "Window geometry",
+
+    # Preferences dialog
+    "preferences": "Preferences",
+    "preferences_appearance": "Appearance",
+    "preferences_behavior": "Behavior",
+    "preferences_shortcuts": "Shortcuts",
+    "prefs_auto_save": "Auto-save config on change",
+    "prefs_remember_window": "Remember window size & position",
+    "prefs_confirm_exit": "Confirm on exit",
+    "prefs_tooltip_delay": "Tooltip delay (ms):",
+
+    # Shortcuts
+    "shortcut_export": "Export",
+    "shortcut_save": "Save Config",
+    "shortcut_load_props": "Load Properties",
+    "shortcut_refresh": "Refresh / Reload",
+    "shortcut_cancel": "Cancel Export",
+    "shortcut_find": "Find in Log",
+    "shortcut_preferences": "Preferences",
 }
 
-# Currently supported languages
-SUPPORTED_LANGUAGES: Dict[str, Dict[str, str]] = {"en": EN}
-
-
-def get_string(key: str, lang: Optional[str] = None) -> str:
-    """Get a translated string by key."""
-    lang_dict = SUPPORTED_LANGUAGES.get(lang, EN)
-    return lang_dict.get(key, key)
-
-
-def set_language(lang: str) -> None:
-    """Set the current language (for future use)."""
-    global _current_lang
-    _current_lang = lang
-
-
-_current_lang: Optional[str] = None
+_current_lang = "en"
 
 
 def _(key: str) -> str:
-    """Translate a string. Used for future i18n support."""
-    return get_string(key, _current_lang)
+    """Translation function - returns English string for key."""
+    return EN.get(key, key)
+
+
+def get_string(key: str) -> str:
+    """Get translated string."""
+    return EN.get(key, key)
+
+
+def set_language(lang: str):
+    """Set current language (placeholder for future multi-language support)."""
+    global _current_lang
+    _current_lang = lang

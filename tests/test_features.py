@@ -503,3 +503,110 @@ def test_cli_bad_zip_is_a_clean_error(tmp_path, isolated, capsys):
     zipfile.ZipFile(empty, "w").close()
     assert cli_main(["export", "--zip", str(empty), "-f", "md", "-o", str(tmp_path)]) == 2
     assert "no Markdown pages" in capsys.readouterr().err
+
+
+# ------------------------------------------------------------------ Phase 8: Profiles
+def test_profile_save_and_load(tmp_path, isolated):
+    from pageout.core.profiles import save_profile, load_profile, list_profiles, delete_profile, profile_exists
+    from pageout.core.config import DEFAULTS
+
+    # Save a profile
+    cfg = dict(DEFAULTS, fmt_pdf=True, fmt_md=True, name_format="{title}", save_dir=str(tmp_path))
+    save_profile("my-profile", cfg)
+
+    # List profiles
+    profiles = list_profiles()
+    assert "my-profile" in profiles
+
+    # Load profile
+    loaded = load_profile("my-profile")
+    assert loaded["fmt_pdf"] is True
+    assert loaded["fmt_md"] is True
+    assert loaded["name_format"] == "{title}"
+    # Secrets should not be in profile
+    assert "token" not in loaded
+    assert "gemini_api_key" not in loaded
+
+    # Delete profile
+    assert delete_profile("my-profile")
+    assert "my-profile" not in list_profiles()
+
+
+def test_profile_cli_commands(tmp_path, isolated, capsys):
+    # Save profile via CLI (uses current config, which we set via env)
+    import os
+    os.environ["NOTION_TOKEN"] = "tok"
+    code = cli_main([
+        "profile", "save", "cli-profile",
+    ])
+    assert code == 0
+
+    # List profiles
+    code = cli_main(["profile", "list"])
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "cli-profile" in out
+
+    # Load profile and print config
+    code = cli_main(["profile", "load", "cli-profile"])
+    assert code == 0
+    out = capsys.readouterr().out
+    assert '"fmt_pdf":' in out
+    # Secrets not in output
+    assert "token" not in out or '"token": ""' in out
+
+    # Delete profile
+    code = cli_main(["profile", "delete", "cli-profile"])
+    assert code == 0
+    capsys.readouterr()  # clear delete message
+    code = cli_main(["profile", "list"])
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "cli-profile" not in out
+
+
+def test_cli_export_with_profile(tmp_path, isolated):
+    # First save a profile
+    from pageout.core.profiles import save_profile
+    from pageout.core.config import DEFAULTS
+    profile_cfg = dict(DEFAULTS, fmt_md=True, save_dir=str(tmp_path / "prof_out"), name_format="{title}")
+    save_profile("export-profile", profile_cfg)
+
+    # Export using profile
+    out_dir = tmp_path / "prof_out"
+    code = cli_main([
+        "export",
+        DB_ID,
+        "--profile", "export-profile",
+        "--token", "tok",
+        "-q",
+    ], notion=FakeNotion())
+    assert code == 0
+    assert (out_dir / "Markdown").exists()
+    files = list((out_dir / "Markdown").glob("*.md"))
+    assert len(files) == 2  # DB has 2 pages
+    # Check name_format was applied
+    assert "Full: Test/Page?" in files[0].name or "Empty page" in files[0].name
+
+
+def test_profile_merge_with_overrides(tmp_path, isolated):
+    # Save a profile with specific settings
+    from pageout.core.profiles import save_profile
+    from pageout.core.config import DEFAULTS
+    profile_cfg = dict(DEFAULTS, fmt_pdf=True, fmt_md=True, name_format="{title}", save_dir=str(tmp_path / "merge_out"))
+    save_profile("merge-profile", profile_cfg)
+
+    # Export with profile + CLI override (format should override)
+    out_dir = tmp_path / "merge_out"
+    code = cli_main([
+        "export",
+        DB_ID,
+        "--profile", "merge-profile",
+        "--format", "pdf",  # Override: only pdf, not md
+        "--token", "tok",
+        "-q",
+    ], notion=FakeNotion())
+    assert code == 0
+    # Should have pdf, not markdown (CLI override wins)
+    assert (out_dir / "PDF").exists()
+    assert not (out_dir / "Markdown").exists()

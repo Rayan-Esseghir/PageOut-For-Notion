@@ -10,16 +10,30 @@ The presenter handles:
 - Binding UI events to pipeline operations
 - State management between tabs
 - Error handling and user feedback
+- Menu bar actions
+- Keyboard shortcuts
+- Window state persistence
 """
 
+import json
+import os
 import tkinter as tk
-from tkinter import messagebox
+from tkinter import messagebox, filedialog
 from typing import Any, Dict, List, Optional, Tuple
 
-from pageout.core.config import load_config, DEFAULTS, save_config
+from pageout.core.config import load_config, DEFAULTS, save_config, CONFIG_DIR
 from pageout.core.errors import Cancelled
 from pageout.core.pipeline import Exporter, export
 from pageout.core.secrets import keyring_available, redact
+from pageout.core.profiles import (
+    list_profiles, save_profile, load_profile, delete_profile, profile_exists,
+    merge_profile_into_config
+)
+from pageout.core.sources import (
+    list_sources, get_source, add_source, delete_source, toggle_pin,
+    get_recent_sources, extract_id_from_url, source_exists
+)
+from pageout.core.queue import ExportQueue, ExportJob, JobStatus, JobPriority
 from pageout.gui.i18n import EN, get_string, _
 
 
@@ -33,9 +47,23 @@ class Presenter:
         self.timing_report = None
         self._unsaved_changes = False
         self._last_config_save = None
+        self._window_geometry = None
+
+        # Export queue
+        self.export_queue = ExportQueue(
+            progress_callback=self._on_queue_progress,
+            log_callback=self._on_queue_log,
+            completion_callback=self._on_queue_complete,
+        )
 
         # Bind config changes to track unsaved changes
         self._bind_config_traces()
+
+        # Load window geometry if available
+        self._load_window_geometry()
+
+        # Start queue processor
+        self.export_queue.start_processing(max_workers=1)
 
     def _bind_config_traces(self):
         """Bind traces to all config variables to track changes."""
@@ -49,8 +77,32 @@ class Presenter:
     def _on_config_changed(self, key: str):
         """Called when a config variable changes."""
         self._unsaved_changes = True
-        # Auto-save logic could go here
-        # For now, just track the change
+        # Auto-save logic - debounced to avoid excessive writes
+        if self.app.V.get("prefs_auto_save", tk.BooleanVar(value=True)).get():
+            # Cancel any pending auto-save
+            if hasattr(self, '_auto_save_after_id'):
+                self.root.after_cancel(self._auto_save_after_id)
+            # Schedule auto-save with debounce (500ms)
+            self._auto_save_after_id = self.root.after(500, self._auto_save_config)
+
+    def _auto_save_config(self):
+        """Auto-save config silently (no error dialogs)."""
+        try:
+            c = self.app.collect()
+            save_config(c)
+            self._unsaved_changes = False
+            self._last_config_save = tk.datetime.datetime.now()
+        except Exception:
+            # Silently ignore auto-save failures
+            pass
+
+    def _update_tooltip_delays(self, *args):
+        """Update tooltip delays when the preference changes."""
+        delay = self.prefs_tooltip_delay.get() if hasattr(self, 'prefs_tooltip_delay') else 500
+        # Update all existing tooltips in the app
+        if hasattr(self.app, '_tooltips'):
+            for tooltip in self.app._tooltips:
+                tooltip.update_delay(delay)
 
     def save_config(self, force: bool = False) -> Optional[str]:
         """Save current config. Returns warning message or None.
@@ -99,19 +151,19 @@ class Presenter:
             (is_valid, error_message) tuple.
         """
         if not c.get("token", "").strip():
-            return False, EN["missing_info_msg"] if hasattr(EN, "missing_info_msg") else "Enter the Notion token and a database / page ID or URL."
+            return False, EN.get("missing_info_msg", "Enter the Notion token and a database / page ID or URL.")
         if not c.get("database", "").strip():
-            return False, EN["missing_info_msg"] if hasattr(EN, "missing_info_msg") else "Enter the Notion token and a database / page ID or URL."
+            return False, EN.get("missing_info_msg", "Enter the Notion token and a database / page ID or URL.")
         if not c.get("save_dir", "").strip():
-            return False, EN["missing_folder_msg"] if hasattr(EN, "missing_folder_msg") else "Choose an output folder on the Output tab."
+            return False, EN.get("missing_folder_msg", "Choose an output folder on the Output tab.")
         return True, None
 
     def start_export(self):
-        """Start the export process with validation."""
+        """Start the export process with validation - adds job to queue."""
         try:
             c = self.app.collect()
         except Exception:
-            messagebox.showerror("Invalid value", EN["invalid_value_msg"] if hasattr(EN, "invalid_value_msg") else "Check the numeric fields.")
+            messagebox.showerror("Invalid value", EN.get("invalid_value_msg", "Check the numeric fields."))
             return False
 
         if not self.validate_basic(c)[0]:
@@ -119,7 +171,7 @@ class Presenter:
 
         # Check for missing folder
         if not c["save_dir"].strip():
-            messagebox.showerror("Missing folder", EN["missing_folder_msg"] if hasattr(EN, "missing_folder_msg") else "Choose an output folder on the Output tab.")
+            messagebox.showerror("Missing folder", EN.get("missing_folder_msg", "Choose an output folder on the Output tab."))
             return False
 
         # Check for Gemini math OCR requirements
@@ -127,20 +179,21 @@ class Presenter:
             if not hasattr(__import__('pageout.ocr.gemini', fromlist=['_GENAI_AVAILABLE']), '_GENAI_AVAILABLE'):
                 messagebox.showerror(
                     "Package Missing",
-                    EN["genai_required"] if hasattr(EN, "genai_required") else "The 'google-genai' library is required for Gemini Math OCR.\n\nPlease install it with:\n  pip install google-genai",
+                    EN.get("genai_required", "The 'google-genai' library is required for Gemini Math OCR.\n\nPlease install it with:\n  pip install google-genai"),
                 )
                 return False
             if not c.get("gemini_api_key", "").strip():
                 messagebox.showerror(
                     "Gemini API Key Required",
-                    EN["gemini_key_required"] if hasattr(EN, "gemini_key_required") else "Math OCR with Gemini Vision is enabled, but no Gemini API Key was entered.\n\nPlease enter your personal Gemini API key in the 'LaTeX & AI' tab.\nYou can get a free key at:\nhttps://aistudio.google.com/",
+                    EN.get("gemini_key_required", "Math OCR with Gemini Vision is enabled, but no Gemini API Key was entered.\n\nPlease enter your personal Gemini API key in the 'LaTeX & AI' tab.\nYou can get a free key at:\nhttps://aistudio.google.com/"),
                 )
                 return False
 
-        # Show warnings about secrets
+        # Save config (including secrets warning)
         warn = save_config(c)
         if warn:
-            messagebox.showwarning("Secrets not saved", warn)
+            if not messagebox.askyesno("Secrets not saved", warn + "\n\nAdd to queue anyway?"):
+                return False
 
         # Check if pages need loading
         shown = self.app.props_list.selected_labels() if hasattr(self.app, 'props_list') else []
@@ -150,38 +203,24 @@ class Presenter:
             if not sel:
                 messagebox.showerror(
                     "No pages ticked",
-                    EN["no_pages_selected"] if hasattr(EN, "no_pages_selected") else "Tick at least one page in tab 2, or clear the list by loading pages again.",
+                    EN.get("no_pages_selected", "Tick at least one page in tab 2, or clear the list by loading pages again."),
                 )
                 return False
             selected = [self.app.loaded_pages[i] for i in sel]
+            # Store selected page IDs in config
+            c["_selected_page_ids"] = [p["id"] for p in selected]
 
-        # Start export
-        self.app.cancel.clear()
-        self.app.set_running(True)
-        self.app.bar.config(value=0)
+        # Add to queue instead of running directly
+        from datetime import datetime
+        name = f"Export {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+        job_id = self.export_queue.add_job(name, c, priority=JobPriority.HIGH)
+        self.app.append_log(f"Added to queue: {name} (ID: {job_id})")
 
-        def worker():
-            try:
-                res = export(
-                    c,
-                    self.app.progress,
-                    self.app.cancel,
-                    self.app.log,
-                    selected_roots=selected,
-                    all_props=self.app.loaded_props,
-                    shown_props=shown,
-                )
-                timing_summary = res.timing.summary() if res.timing else None
-                # Use root.after to update UI from thread
-                self.root.after(0, lambda: self._export_done(res, timing_summary))
-            except Cancelled:
-                self.root.after(0, lambda: self._export_done_cancelled())
-            except Exception as e:
-                redacted = redact(e, [c.get("token", ""), c.get("gemini_api_key", "")])
-                self.root.after(0, lambda: self._export_error(redacted))
+        # Refresh queue display if open
+        if hasattr(self.app, 'refresh_queue_display'):
+            self.app.refresh_queue_display()
 
-        import threading
-        threading.Thread(target=worker, daemon=True).start()
+        messagebox.showinfo("Added to Queue", f"Job '{name}' added to export queue.\nID: {job_id}\n\nOpen 'Tools > Export Queue' to monitor progress.")
         return True
 
     def _export_done(self, res, timing_summary):
@@ -191,7 +230,7 @@ class Presenter:
         skipped = res.skipped
         text = f"Exported {count - skipped} page(s)."
         if skipped:
-            text += f"\n{skipped} unchanged page(s) skipped (tick “Force full re-export” to redo them)."
+            text += f"\n{skipped} unchanged page(s) skipped (tick \"Force full re-export\" to redo them)."
         if timing_summary:
             text += f"\n\nTiming: {timing_summary}"
         text += f"\n\n{res.out_dir}"
@@ -214,7 +253,7 @@ class Presenter:
     def _export_done_cancelled(self):
         """Handle export cancellation."""
         self.app.set_running(False)
-        self.app.append_log(EN["cancelled"] if hasattr(EN, "cancelled") else "Cancelled. Files exported so far were kept.")
+        self.app.append_log(EN.get("cancelled", "Cancelled. Files exported so far were kept."))
 
     def _export_error(self, error_msg: str):
         """Handle export error."""
@@ -224,7 +263,405 @@ class Presenter:
     def cancel_export(self):
         """Cancel the current export."""
         self.app.cancel.set()
-        self.app.append_log(EN["cancel"] if hasattr(EN, "cancel") else "Cancelling after the current page...")
+        self.app.append_log(EN.get("cancel", "Cancelling after the current page..."))
+
+    # === Export Queue Methods ===
+
+    def _on_queue_progress(self, job_id: str, progress: float, message: str):
+        """Handle progress updates from queue."""
+        job = self.export_queue.get_job(job_id)
+        if job:
+            self.root.after(0, lambda: self._update_queue_ui(job))
+            # Update queue status in main window
+            self.root.after(0, lambda: self._update_queue_status())
+
+    def _on_queue_log(self, job_id: str, message: str):
+        """Handle log messages from queue."""
+        self.root.after(0, lambda: self.app.append_log(f"[{job_id}] {message}"))
+
+    def _on_queue_complete(self, job: ExportJob):
+        """Handle job completion."""
+        self.root.after(0, lambda: self._handle_job_complete(job))
+        # Update queue status
+        self.root.after(0, lambda: self._update_queue_status())
+
+    def _update_queue_status(self):
+        """Update the queue status display in the main window."""
+        if hasattr(self.app, 'queue_status'):
+            stats = self.export_queue.get_stats()
+            running = stats.get('running', 0)
+            pending = stats.get('pending', 0)
+            if running > 0:
+                self.app.queue_status.set(f"Queue: {running} running, {pending} pending")
+            elif pending > 0:
+                self.app.queue_status.set(f"Queue: {pending} pending")
+            else:
+                self.app.queue_status.set("")
+
+    def _update_queue_ui(self, job: ExportJob):
+        """Update UI for a queue job."""
+        if hasattr(self.app, 'queue_tree'):
+            # Update tree item
+            for item in self.app.queue_tree.get_children():
+                if self.app.queue_tree.item(item, "values")[0] == job.id:
+                    status = job.status.value
+                    progress_pct = int(job.progress * 100)
+                    self.app.queue_tree.item(item, values=(
+                        job.id,
+                        job.name,
+                        status,
+                        f"{progress_pct}%",
+                        f"{job.current_page}/{job.total_pages}",
+                        job.message[:50],
+                    ))
+                    break
+
+        # If this is the running job, update progress bar
+        running = self.export_queue.get_running_job()
+        if running and running.id == job.id:
+            self.app.bar.config(value=job.progress * 100)
+            self.app.status_var.set(job.message)
+
+    def _handle_job_complete(self, job: ExportJob):
+        """Handle job completion - show notification, update UI."""
+        self._update_queue_ui(job)
+
+        if job.status == JobStatus.COMPLETED:
+            self.app.append_log(f"Job '{job.name}' completed: {job.message}")
+            if job.result:
+                out_dir = job.result.get("out_dir", "")
+                if out_dir:
+                    try:
+                        self.app.open_folder(out_dir)
+                    except Exception:
+                        pass
+        elif job.status == JobStatus.FAILED:
+            self.app.append_log(f"Job '{job.name}' failed: {job.error}")
+            messagebox.showerror("Export Failed", f"Job '{job.name}' failed:\n{job.error}")
+        elif job.status == JobStatus.CANCELLED:
+            self.app.append_log(f"Job '{job.name}' cancelled")
+
+        # Refresh queue display
+        if hasattr(self.app, 'refresh_queue_display'):
+            self.app.refresh_queue_display()
+
+    def add_to_queue(self, name: str = None, priority: JobPriority = JobPriority.NORMAL):
+        """Add current settings as a job to the export queue."""
+        try:
+            c = self.app.collect()
+        except Exception:
+            messagebox.showerror("Invalid value", EN.get("invalid_value_msg", "Check the numeric fields."))
+            return
+
+        if not self.validate_basic(c)[0]:
+            return
+
+        # Check for Gemini math OCR requirements
+        if c.get("gemini_math_ocr"):
+            if not hasattr(__import__('pageout.ocr.gemini', fromlist=['_GENAI_AVAILABLE']), '_GENAI_AVAILABLE'):
+                messagebox.showerror(
+                    "Package Missing",
+                    EN.get("genai_required", "The 'google-genai' library is required for Gemini Math OCR.\n\nPlease install it with:\n  pip install google-genai"),
+                )
+                return
+            if not c.get("gemini_api_key", "").strip():
+                messagebox.showerror(
+                    "Gemini API Key Required",
+                    EN.get("gemini_key_required", "Math OCR with Gemini Vision is enabled, but no Gemini API Key was entered.\n\nPlease enter your personal Gemini API key in the 'LaTeX & AI' tab.\nYou can get a free key at:\nhttps://aistudio.google.com/"),
+                )
+                return
+
+        # Save config (including secrets warning)
+        warn = save_config(c)
+        if warn:
+            if not messagebox.askyesno("Secrets not saved", warn + "\n\nAdd to queue anyway?"):
+                return
+
+        # Generate job name
+        if not name:
+            from datetime import datetime
+            name = f"Export {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+
+        # Check if pages need loading
+        shown = self.app.props_list.selected_labels() if hasattr(self.app, 'props_list') else []
+        selected = None
+        if self.app.loaded_pages and self.app.loaded_source == c["database"].strip():
+            sel = self.app.pages_list.selected_indices() if hasattr(self.app, 'pages_list') else []
+            if not sel:
+                messagebox.showerror(
+                    "No pages ticked",
+                    EN.get("no_pages_selected", "Tick at least one page in tab 2, or clear the list by loading pages again."),
+                )
+                return
+            selected = [self.app.loaded_pages[i] for i in sel]
+            # Store selected page IDs in config
+            c["_selected_page_ids"] = [p["id"] for p in selected]
+
+        # Add to queue
+        job_id = self.export_queue.add_job(name, c, priority=priority)
+        self.app.append_log(f"Added to queue: {name} (ID: {job_id})")
+
+        # Refresh queue display
+        if hasattr(self.app, 'refresh_queue_display'):
+            self.app.refresh_queue_display()
+
+        messagebox.showinfo("Added to Queue", f"Job '{name}' added to export queue.\nID: {job_id}")
+
+    def show_queue(self):
+        """Show the export queue dialog."""
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Export Queue")
+        dialog.geometry("800x500")
+        dialog.transient(self.root)
+        dialog.grab_set()
+
+        ttk = __import__('tkinter.ttk', fromlist=['*'])
+
+        # Toolbar
+        toolbar = ttk.Frame(dialog)
+        toolbar.pack(fill="x", padx=10, pady=5)
+
+        ttk.Button(toolbar, text="Add Current Settings", command=lambda: [self.add_to_queue(), dialog.destroy()]).pack(side="left", padx=5)
+        ttk.Button(toolbar, text="Pause Selected", command=lambda: self._queue_pause_selected(dialog)).pack(side="left", padx=5)
+        ttk.Button(toolbar, text="Resume Selected", command=lambda: self._queue_resume_selected(dialog)).pack(side="left", padx=5)
+        ttk.Button(toolbar, text="Remove Selected", command=lambda: self._queue_remove_selected(dialog)).pack(side="left", padx=5)
+        ttk.Button(toolbar, text="Cancel Selected", command=lambda: self._queue_cancel_selected(dialog)).pack(side="left", padx=5)
+        ttk.Button(toolbar, text="Retry Selected", command=lambda: self._queue_retry_selected(dialog)).pack(side="left", padx=5)
+        ttk.Button(toolbar, text="Clear History", command=lambda: self._queue_clear_history(dialog)).pack(side="left", padx=5)
+        ttk.Button(toolbar, text="Refresh", command=lambda: self.refresh_queue_display(dialog)).pack(side="right", padx=5)
+
+        # Queue treeview
+        columns = ("id", "name", "status", "progress", "pages", "message")
+        self.app.queue_tree = ttk.Treeview(dialog, columns=columns, show="headings", height=20)
+        self.app.queue_tree.heading("id", text="ID")
+        self.app.queue_tree.heading("name", text="Name")
+        self.app.queue_tree.heading("status", text="Status")
+        self.app.queue_tree.heading("progress", text="Progress")
+        self.app.queue_tree.heading("pages", text="Pages")
+        self.app.queue_tree.heading("message", text="Message")
+        self.app.queue_tree.column("id", width=60)
+        self.app.queue_tree.column("name", width=200)
+        self.app.queue_tree.column("status", width=100)
+        self.app.queue_tree.column("progress", width=80)
+        self.app.queue_tree.column("pages", width=80)
+        self.app.queue_tree.column("message", width=250)
+        self.app.queue_tree.pack(fill="both", expand=True, padx=10, pady=5)
+
+        # Status bar
+        status_frame = ttk.Frame(dialog)
+        status_frame.pack(fill="x", padx=10, pady=5)
+        self.app.queue_status_var = tk.StringVar(value="")
+        ttk.Label(status_frame, textvariable=self.app.queue_status_var).pack(side="left")
+
+        # Bind double-click to show details
+        self.app.queue_tree.bind("<Double-1>", lambda e: self._show_job_details(dialog))
+
+        # Initial load
+        self.refresh_queue_display(dialog)
+
+        # Auto-refresh
+        def auto_refresh():
+            if dialog.winfo_exists():
+                self.refresh_queue_display(dialog)
+                dialog.after(1000, auto_refresh)
+        dialog.after(1000, auto_refresh)
+
+    def refresh_queue_display(self, dialog=None):
+        """Refresh the queue treeview."""
+        tree = getattr(self.app, 'queue_tree', None)
+        if not tree:
+            return
+
+        # Save selection
+        selection = tree.selection()
+
+        # Clear and repopulate
+        for item in tree.get_children():
+            tree.delete(item)
+
+        jobs = self.export_queue.get_all_jobs()
+        for job in jobs:
+            status = job.status.value
+            progress_pct = int(job.progress * 100)
+            pages = f"{job.current_page}/{job.total_pages}" if job.total_pages > 0 else "—"
+            msg = job.message[:80] if job.message else ""
+            if job.error:
+                msg = f"Error: {job.error[:60]}"
+
+            # Color by status
+            tags = ()
+            if job.status == JobStatus.RUNNING:
+                tags = ("running",)
+            elif job.status == JobStatus.COMPLETED:
+                tags = ("completed",)
+            elif job.status == JobStatus.FAILED:
+                tags = ("failed",)
+            elif job.status == JobStatus.CANCELLED:
+                tags = ("cancelled",)
+            elif job.status == JobStatus.PAUSED:
+                tags = ("paused",)
+
+            tree.insert("", "end", values=(
+                job.id,
+                job.name,
+                status,
+                f"{progress_pct}%",
+                pages,
+                msg,
+            ), tags=tags)
+
+        # Configure tags
+        tree.tag_configure("running", background="#e8f5e9")
+        tree.tag_configure("completed", background="#e3f2fd")
+        tree.tag_configure("failed", background="#ffebee")
+        tree.tag_configure("cancelled", background="#f5f5f5")
+        tree.tag_configure("paused", background="#fff3e0")
+
+        # Restore selection
+        for item_id in selection:
+            if tree.exists(item_id):
+                tree.selection_add(item_id)
+
+        # Update status bar
+        stats = self.export_queue.get_stats()
+        status_text = f"Total: {sum(stats.values())}  |  Pending: {stats.get('pending', 0)}  Running: {stats.get('running', 0)}  Completed: {stats.get('completed', 0)}  Failed: {stats.get('failed', 0)}  Cancelled: {stats.get('cancelled', 0)}"
+        if hasattr(self.app, 'queue_status_var'):
+            self.app.queue_status_var.set(status_text)
+
+    def _queue_remove_selected(self, dialog):
+        """Remove selected job from queue."""
+        tree = getattr(self.app, 'queue_tree', None)
+        if not tree:
+            return
+        selection = tree.selection()
+        if not selection:
+            return
+        item = tree.item(selection[0])
+        job_id = item["values"][0]
+        job = self.export_queue.get_job(job_id)
+        if job and job.status == JobStatus.RUNNING:
+            messagebox.showwarning("Cannot Remove", "Cannot remove a running job. Cancel it first.")
+            return
+        if messagebox.askyesno("Remove Job", f"Remove job '{item['values'][1]}' from queue?"):
+            self.export_queue.remove_job(job_id)
+            self.refresh_queue_display(dialog)
+
+    def _queue_pause_selected(self, dialog):
+        """Pause selected job."""
+        tree = getattr(self.app, 'queue_tree', None)
+        if not tree:
+            return
+        selection = tree.selection()
+        if not selection:
+            return
+        item = tree.item(selection[0])
+        job_id = item["values"][0]
+        job = self.export_queue.get_job(job_id)
+        if job and job.status == JobStatus.PENDING:
+            self.export_queue.pause_job(job_id)
+            self.refresh_queue_display(dialog)
+
+    def _queue_resume_selected(self, dialog):
+        """Resume selected job."""
+        tree = getattr(self.app, 'queue_tree', None)
+        if not tree:
+            return
+        selection = tree.selection()
+        if not selection:
+            return
+        item = tree.item(selection[0])
+        job_id = item["values"][0]
+        job = self.export_queue.get_job(job_id)
+        if job and job.status == JobStatus.PAUSED:
+            self.export_queue.resume_job(job_id)
+            self.refresh_queue_display(dialog)
+
+    def _queue_cancel_selected(self, dialog):
+        """Cancel selected job."""
+        tree = getattr(self.app, 'queue_tree', None)
+        if not tree:
+            return
+        selection = tree.selection()
+        if not selection:
+            return
+        item = tree.item(selection[0])
+        job_id = item["values"][0]
+        job = self.export_queue.get_job(job_id)
+        if job and job.status in (JobStatus.RUNNING, JobStatus.PENDING, JobStatus.PAUSED):
+            self.export_queue.cancel_job(job_id)
+            self.refresh_queue_display(dialog)
+
+    def _queue_retry_selected(self, dialog):
+        """Retry selected job."""
+        tree = getattr(self.app, 'queue_tree', None)
+        if not tree:
+            return
+        selection = tree.selection()
+        if not selection:
+            return
+        item = tree.item(selection[0])
+        job_id = item["values"][0]
+        job = self.export_queue.get_job(job_id)
+        if job and job.status in (JobStatus.FAILED, JobStatus.CANCELLED):
+            self.export_queue.retry_job(job_id)
+            self.refresh_queue_display(dialog)
+
+    def _queue_clear_history(self, dialog):
+        """Clear completed/failed/cancelled jobs from history."""
+        if messagebox.askyesno("Clear History", "Remove all completed, failed, and cancelled jobs from the queue?"):
+            self.export_queue.clear_history()
+            self.refresh_queue_display(dialog)
+
+    def _show_job_details(self, parent):
+        """Show detailed job information."""
+        tree = getattr(self.app, 'queue_tree', None)
+        if not tree:
+            return
+        selection = tree.selection()
+        if not selection:
+            return
+        item = tree.item(selection[0])
+        job_id = item["values"][0]
+        job = self.export_queue.get_job(job_id)
+        if not job:
+            return
+
+        detail_dialog = tk.Toplevel(parent)
+        detail_dialog.title(f"Job Details: {job.name}")
+        detail_dialog.geometry("500x400")
+        detail_dialog.transient(parent)
+        detail_dialog.grab_set()
+
+        ttk = __import__('tkinter.ttk', fromlist=['*'])
+
+        text = tk.Text(detail_dialog, wrap="word", padx=10, pady=10)
+        text.pack(fill="both", expand=True, padx=10, pady=10)
+
+        details = [
+            f"ID: {job.id}",
+            f"Name: {job.name}",
+            f"Status: {job.status.value}",
+            f"Priority: {job.priority.name}",
+            f"Created: {job.created_at}",
+            f"Started: {job.started_at or '—'}",
+            f"Completed: {job.completed_at or '—'}",
+            f"Progress: {int(job.progress * 100)}%",
+            f"Pages: {job.current_page}/{job.total_pages}",
+            f"Message: {job.message}",
+        ]
+        if job.error:
+            details.append(f"Error: {job.error}")
+        if job.result:
+            details.append(f"Output: {job.result.get('out_dir', '—')}")
+            details.append(f"Total pages: {job.result.get('total', 0)}")
+            details.append(f"Skipped: {job.result.get('skipped', 0)}")
+            details.append(f"Failed: {job.result.get('failed', 0)}")
+            details.append(f"Timing: {job.result.get('timing', '—')}")
+
+        text.insert("1.0", "\n".join(details))
+        text.config(state="disabled")
+
+        ttk.Button(detail_dialog, text="Close", command=detail_dialog.destroy).pack(pady=10)
 
     def do_login(self):
         """Handle login button click."""
@@ -311,7 +748,7 @@ class Presenter:
         try:
             c = self.app.collect()
         except Exception:
-            messagebox.showerror("Invalid value", EN["invalid_value_msg"] if hasattr(EN, "invalid_value_msg") else "Check the numeric fields.")
+            messagebox.showerror("Invalid value", EN.get("invalid_value_msg", "Check the numeric fields."))
             return
 
         if not self.validate_basic(c)[0]:
@@ -346,16 +783,12 @@ class Presenter:
 
     def choose_folder(self):
         """Open folder selection dialog."""
-        from tkinter import filedialog
-
         d = filedialog.askdirectory(title="Choose output folder")
         if d:
             self.app.V["save_dir"].set(d)
 
     def choose_icon_file(self):
         """Choose custom icon file."""
-        from tkinter import filedialog
-
         p = filedialog.askopenfilename(
             title="Choose custom icon image",
             filetypes=[("Images", "*.png *.jpg *.jpeg *.gif *.webp *.svg"), ("All files", "*.*")],
@@ -371,10 +804,33 @@ class Presenter:
     def on_close(self):
         """Handle window close event."""
         try:
+            # Check if we should confirm exit
+            if self.prefs_confirm_exit.get() if hasattr(self, 'prefs_confirm_exit') else False:
+                if not messagebox.askyesno("Confirm Exit", "Are you sure you want to exit?"):
+                    return  # Don't close
+
+            # Check for running jobs
+            if self.export_queue.is_running():
+                if not messagebox.askyesno(
+                    "Running Export",
+                    "An export job is currently running. Exit anyway? (The job will be cancelled.)",
+                ):
+                    return  # Don't close
+                # Cancel running job
+                running_job = self.export_queue.get_running_job()
+                if running_job:
+                    self.export_queue.cancel_job(running_job.id)
+
+            # Stop queue processor
+            self.export_queue.stop_processing(wait=False)
+
+            # Save window geometry
+            self._save_window_geometry()
+
             # Save config on close
             warn = self.save_config()
             if warn:
-                if not messagebox.askyes(
+                if not messagebox.askyesno(
                     "Unsaved changes",
                     f"You have unsaved changes.\n{warn}\n\nSave anyway?",
                 ):
@@ -382,6 +838,589 @@ class Presenter:
             self.root.destroy()
         except Exception:
             self.root.destroy()
+
+    # === U2: New methods for menu bar and shortcuts ===
+
+    def new_config(self):
+        """Create a new configuration (reset to defaults)."""
+        if self._unsaved_changes:
+            if not messagebox.askyesno("Unsaved changes", "Discard unsaved changes and start fresh?"):
+                return
+        # Reset all variables to defaults
+        for key, default in DEFAULTS.items():
+            if key in self.app.V:
+                if isinstance(default, bool):
+                    self.app.V[key].set(default)
+                elif isinstance(default, int):
+                    self.app.V[key].set(default)
+                elif isinstance(default, float):
+                    self.app.V[key].set(default)
+                else:
+                    self.app.V[key].set(default)
+        self._unsaved_changes = False
+
+    def open_config_folder(self):
+        """Open the config folder in file explorer."""
+        import subprocess
+        import sys
+        try:
+            if sys.platform.startswith("win"):
+                os.startfile(CONFIG_DIR)
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", CONFIG_DIR])
+            else:
+                subprocess.Popen(["xdg-open", CONFIG_DIR])
+        except Exception as e:
+            messagebox.showerror("Error", f"Could not open config folder: {e}")
+
+    def save_profile(self):
+        """Save current settings as a named profile."""
+        from tkinter import simpledialog
+
+        name = simpledialog.askstring("Save Profile", "Enter profile name:", parent=self.root)
+        if not name:
+            return
+
+        # Collect current config
+        c = self.app.collect()
+
+        # Save profile using the profiles module (filters secrets and runtime keys)
+        try:
+            save_profile(name, c)
+            messagebox.showinfo("Profile Saved", f"Profile '{name}' saved successfully.")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to save profile: {e}")
+
+    def load_profile(self):
+        """Load a saved profile."""
+        profiles = list_profiles()
+        if not profiles:
+            messagebox.showinfo("No Profiles", "No profiles found. Save a profile first.")
+            return
+
+        # Show dialog to select profile
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Load Profile")
+        dialog.geometry("300x400")
+        dialog.transient(self.root)
+        dialog.grab_set()
+
+        ttk = __import__('tkinter.ttk', fromlist=['*'])
+        ttk.Label(dialog, text="Select a profile to load:").pack(pady=10)
+
+        listbox = tk.Listbox(dialog)
+        for p in profiles:
+            listbox.insert(tk.END, p)
+        listbox.pack(fill="both", expand=True, padx=10, pady=5)
+
+        def on_load():
+            selection = listbox.curselection()
+            if selection:
+                profile_name = profiles[selection[0]]
+                self._load_profile_file(profile_name)
+                dialog.destroy()
+
+        btn_frame = ttk.Frame(dialog)
+        btn_frame.pack(pady=10)
+        ttk.Button(btn_frame, text="Load", command=on_load).pack(side="left", padx=5)
+        ttk.Button(btn_frame, text="Cancel", command=dialog.destroy).pack(side="left", padx=5)
+
+        self.root.wait_window(dialog)
+
+    def _load_profile_file(self, profile_name: str):
+        """Load a specific profile file."""
+        try:
+            profile_data = load_profile(profile_name)
+
+            # Merge with defaults using the profiles module
+            cfg = load_config()
+            merge_profile_into_config(profile_data, cfg)
+
+            # Apply merged config to UI
+            for key, val in cfg.items():
+                if key in self.app.V:
+                    default = DEFAULTS.get(key)
+                    if isinstance(default, bool):
+                        self.app.V[key].set(bool(val))
+                    elif isinstance(default, int):
+                        self.app.V[key].set(int(val))
+                    elif isinstance(default, float):
+                        self.app.V[key].set(float(val))
+                    else:
+                        self.app.V[key].set(str(val))
+
+            messagebox.showinfo("Profile Loaded", f"Profile '{profile_name}' loaded successfully.")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to load profile: {e}")
+
+    def manage_profiles(self):
+        """Open manage profiles dialog."""
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Manage Profiles")
+        dialog.geometry("400x400")
+        dialog.transient(self.root)
+        dialog.grab_set()
+
+        ttk = __import__('tkinter.ttk', fromlist=['*'])
+        ttk.Label(dialog, text="Saved Profiles:").pack(pady=10)
+
+        listbox = tk.Listbox(dialog)
+        profiles = list_profiles()
+        for p in profiles:
+            listbox.insert(tk.END, p)
+        listbox.pack(fill="both", expand=True, padx=10, pady=5)
+
+        def on_delete():
+            selection = listbox.curselection()
+            if selection:
+                profile_name = profiles[selection[0]]
+                if messagebox.askyesno("Delete Profile", f"Delete profile '{profile_name}'?"):
+                    delete_profile(profile_name)
+                    listbox.delete(selection[0])
+                    profiles.pop(selection[0])
+
+        def on_duplicate():
+            selection = listbox.curselection()
+            if selection:
+                profile_name = profiles[selection[0]]
+                new_name = f"{profile_name}_copy"
+                # Load the profile and save with new name
+                profile_data = load_profile(profile_name)
+                save_profile(new_name, profile_data)
+                listbox.insert(tk.END, new_name)
+                profiles.append(new_name)
+
+        btn_frame = ttk.Frame(dialog)
+        btn_frame.pack(pady=10)
+        ttk.Button(btn_frame, text="Delete", command=on_delete).pack(side="left", padx=5)
+        ttk.Button(btn_frame, text="Duplicate", command=on_duplicate).pack(side="left", padx=5)
+        ttk.Button(btn_frame, text="Close", command=dialog.destroy).pack(side="left", padx=5)
+
+    # === Source Management ===
+
+    def save_source(self):
+        """Save current database/page as a named source."""
+        from tkinter import simpledialog
+
+        c = self.app.collect()
+        url = c.get("database", "").strip()
+        if not url:
+            messagebox.showinfo("No Source", "Enter a database/page link first.")
+            return
+
+        # Try to extract a nice default name
+        default_name = extract_id_from_url(url) or "My Source"
+
+        name = simpledialog.askstring("Save Source", "Enter source name:", initialvalue=default_name, parent=self.root)
+        if not name:
+            return
+
+        source_type = c.get("source_type", "Auto-detect")
+        try:
+            add_source(name, url, source_type, pinned=False)
+            messagebox.showinfo("Source Saved", f"Source '{name}' saved successfully.")
+            # Refresh the source dropdown if it exists
+            self._refresh_source_dropdown()
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to save source: {e}")
+
+    def load_source(self):
+        """Load a saved source."""
+        sources = list_sources()
+        if not sources:
+            messagebox.showinfo("No Sources", "No sources found. Save a source first.")
+            return
+
+        # Show dialog to select source
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Load Source")
+        dialog.geometry("500x400")
+        dialog.transient(self.root)
+        dialog.grab_set()
+
+        ttk = __import__('tkinter.ttk', fromlist=['*'])
+        ttk.Label(dialog, text="Select a source to load:").pack(pady=10)
+
+        # Create a listbox with source details
+        listbox = tk.Listbox(dialog)
+        for s in sources:
+            pin_mark = "📌 " if s.get("pinned") else ""
+            src_type = s.get("source_type", "Auto-detect")
+            url_preview = s.get("url", "")[:60]
+            listbox.insert(tk.END, f"{pin_mark}{s['name']}  ({src_type})  {url_preview}")
+        listbox.pack(fill="both", expand=True, padx=10, pady=5)
+
+        def on_load():
+            selection = listbox.curselection()
+            if selection:
+                source_name = sources[selection[0]]["name"]
+                self._load_source_file(source_name)
+                dialog.destroy()
+
+        btn_frame = ttk.Frame(dialog)
+        btn_frame.pack(pady=10)
+        ttk.Button(btn_frame, text="Load", command=on_load).pack(side="left", padx=5)
+        ttk.Button(btn_frame, text="Cancel", command=dialog.destroy).pack(side="left", padx=5)
+
+        self.root.wait_window(dialog)
+
+    def _load_source_file(self, source_name: str):
+        """Load a specific source."""
+        try:
+            src = get_source(source_name)
+            if not src:
+                messagebox.showerror("Error", f"Source '{source_name}' not found.")
+                return
+
+            self.app.V["database"].set(src.get("url", ""))
+            self.app.V["source_type"].set(src.get("source_type", "Auto-detect"))
+            messagebox.showinfo("Source Loaded", f"Source '{source_name}' loaded successfully.")
+            self._refresh_source_dropdown()
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to load source: {e}")
+
+    def manage_sources(self):
+        """Open manage sources dialog."""
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Manage Sources")
+        dialog.geometry("600x450")
+        dialog.transient(self.root)
+        dialog.grab_set()
+
+        ttk = __import__('tkinter.ttk', fromlist=['*'])
+        ttk.Label(dialog, text="Saved Sources:").pack(pady=10)
+
+        # Create treeview for better display
+        columns = ("name", "type", "url", "pinned")
+        tree = ttk.Treeview(dialog, columns=columns, show="headings", height=15)
+        tree.heading("name", text="Name")
+        tree.heading("type", text="Type")
+        tree.heading("url", text="URL / ID")
+        tree.heading("pinned", text="Pinned")
+        tree.column("name", width=150)
+        tree.column("type", width=100)
+        tree.column("url", width=250)
+        tree.column("pinned", width=60)
+        tree.pack(fill="both", expand=True, padx=10, pady=5)
+
+        def refresh_tree():
+            for item in tree.get_children():
+                tree.delete(item)
+            sources = list_sources()
+            for s in sources:
+                pin_mark = "📌" if s.get("pinned") else ""
+                tree.insert("", "end", values=(
+                    s.get("name", ""),
+                    s.get("source_type", "Auto-detect"),
+                    s.get("url", "")[:80],
+                    pin_mark
+                ))
+
+        refresh_tree()
+
+        def on_add():
+            from tkinter import simpledialog
+            name = simpledialog.askstring("Add Source", "Enter source name:", parent=dialog)
+            if not name:
+                return
+            url = simpledialog.askstring("Add Source", "Enter Notion URL or ID:", parent=dialog)
+            if not url:
+                return
+            source_type = "Auto-detect"
+            try:
+                add_source(name, url, source_type, pinned=False)
+                refresh_tree()
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to add source: {e}")
+
+        def on_delete():
+            selection = tree.selection()
+            if selection:
+                item = tree.item(selection[0])
+                source_name = item["values"][0]
+                if messagebox.askyesno("Delete Source", f"Delete source '{source_name}'?"):
+                    delete_source(source_name)
+                    refresh_tree()
+
+        def on_pin():
+            selection = tree.selection()
+            if selection:
+                item = tree.item(selection[0])
+                source_name = item["values"][0]
+                new_status = toggle_pin(source_name)
+                refresh_tree()
+
+        btn_frame = ttk.Frame(dialog)
+        btn_frame.pack(pady=10)
+        ttk.Button(btn_frame, text="Add", command=on_add).pack(side="left", padx=5)
+        ttk.Button(btn_frame, text="Delete", command=on_delete).pack(side="left", padx=5)
+        ttk.Button(btn_frame, text="Pin/Unpin", command=on_pin).pack(side="left", padx=5)
+        ttk.Button(btn_frame, text="Close", command=dialog.destroy).pack(side="left", padx=5)
+
+    def _refresh_source_dropdown(self):
+        """Refresh the source dropdown on the Source page if it exists."""
+        if hasattr(self.app, 'source_combo'):
+            sources = get_recent_sources(limit=20)
+            source_names = [s["name"] for s in sources]
+            self.app.source_combo.config(values=source_names)
+
+    def export_settings(self):
+        """Export settings to a JSON file."""
+        file_path = filedialog.asksaveasfilename(
+            title="Export Settings",
+            defaultextension=".json",
+            filetypes=[("JSON files", "*.json"), ("All files", "*.*")],
+        )
+        if file_path:
+            try:
+                c = self.app.collect()
+                with open(file_path, "w", encoding="utf-8") as f:
+                    json.dump(c, f, indent=2)
+                messagebox.showinfo("Exported", "Settings exported successfully.")
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to export settings: {e}")
+
+    def import_settings(self):
+        """Import settings from a JSON file."""
+        file_path = filedialog.askopenfilename(
+            title="Import Settings",
+            filetypes=[("JSON files", "*.json"), ("All files", "*.*")],
+        )
+        if file_path:
+            try:
+                with open(file_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+
+                for key, val in data.items():
+                    if key in self.app.V:
+                        default = DEFAULTS.get(key)
+                        if isinstance(default, bool):
+                            self.app.V[key].set(bool(val))
+                        elif isinstance(default, int):
+                            self.app.V[key].set(int(val))
+                        elif isinstance(default, float):
+                            self.app.V[key].set(float(val))
+                        else:
+                            self.app.V[key].set(str(val))
+
+                messagebox.showinfo("Imported", "Settings imported successfully.")
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to import settings: {e}")
+
+    def show_preferences(self):
+        """Show preferences dialog."""
+        dialog = tk.Toplevel(self.root)
+        dialog.title(_("preferences"))
+        dialog.geometry("500x450")
+        dialog.transient(self.root)
+        dialog.grab_set()
+
+        ttk = __import__('tkinter.ttk', fromlist=['*'])
+
+        notebook = ttk.Notebook(dialog)
+        notebook.pack(fill="both", expand=True, padx=10, pady=10)
+
+        # Appearance tab
+        app_tab = ttk.Frame(notebook)
+        notebook.add(app_tab, text=_("preferences_appearance"))
+
+        # Theme
+        theme_frame = ttk.LabelFrame(app_tab, text=_("preferences_appearance"), padding=10)
+        theme_frame.pack(fill="x", padx=10, pady=10)
+
+        ttk.Label(theme_frame, text=_("theme_label")).grid(row=0, column=0, sticky="w", padx=5, pady=5)
+        theme_var = tk.StringVar(value=self.app.theme.current_theme)
+        for i, (val, label) in enumerate([("light", _("theme_light")), ("dark", _("theme_dark")), ("system", _("theme_system"))]):
+            ttk.Radiobutton(theme_frame, text=label, variable=theme_var, value=val).grid(row=0, column=i+1, padx=5)
+
+        def apply_theme():
+            self.app.theme.apply_theme(theme_var.get())
+
+        ttk.Button(theme_frame, text=_("preferences"), command=apply_theme).grid(row=0, column=4, padx=10)
+
+        # UI Scale
+        scale_frame = ttk.LabelFrame(app_tab, text=_("ui_scale"), padding=10)
+        scale_frame.pack(fill="x", padx=10, pady=10)
+        ttk.Label(scale_frame, text=_("ui_scale")).pack(side="left")
+        scale_var = tk.DoubleVar(value=self.app.theme.ui_scale)
+        scale = ttk.Scale(scale_frame, from_=0.8, to=1.5, variable=scale_var, orient="horizontal", length=200)
+        scale.pack(side="left", padx=10)
+        ttk.Label(scale_frame, textvariable=scale_var).pack(side="left")
+
+        def apply_scale(*_):
+            self.app.theme.set_ui_scale(scale_var.get())
+
+        scale_var.trace_add("write", apply_scale)
+
+        # Behavior tab
+        beh_tab = ttk.Frame(notebook)
+        notebook.add(beh_tab, text=_("preferences_behavior"))
+
+        beh_frame = ttk.LabelFrame(beh_tab, text=_("preferences_behavior"), padding=10)
+        beh_frame.pack(fill="x", padx=10, pady=10)
+
+        # Load prefs from config (synced with UI variables)
+        self.prefs_auto_save = self.app.V.get("prefs_auto_save", tk.BooleanVar(value=True))
+        ttk.Checkbutton(beh_frame, text=_("prefs_auto_save"), variable=self.prefs_auto_save).pack(anchor="w", pady=2)
+
+        self.prefs_remember_window = self.app.V.get("prefs_remember_window", tk.BooleanVar(value=True))
+        ttk.Checkbutton(beh_frame, text=_("prefs_remember_window"), variable=self.prefs_remember_window).pack(anchor="w", pady=2)
+
+        self.prefs_confirm_exit = self.app.V.get("prefs_confirm_exit", tk.BooleanVar(value=False))
+        ttk.Checkbutton(beh_frame, text=_("prefs_confirm_exit"), variable=self.prefs_confirm_exit).pack(anchor="w", pady=2)
+
+        # Tooltip delay
+        tooltip_frame = ttk.Frame(beh_frame)
+        tooltip_frame.pack(fill="x", pady=5)
+        ttk.Label(tooltip_frame, text=_("prefs_tooltip_delay")).pack(side="left")
+        self.prefs_tooltip_delay = self.app.V.get("prefs_tooltip_delay", tk.IntVar(value=500))
+        tooltip_spin = ttk.Spinbox(tooltip_frame, from_=100, to=5000, increment=100, textvariable=self.prefs_tooltip_delay, width=8)
+        tooltip_spin.pack(side="left", padx=10)
+        # Trace tooltip delay changes to update all tooltips
+        self.prefs_tooltip_delay.trace_add("write", self._update_tooltip_delays)
+
+        # Shortcuts tab
+        short_tab = ttk.Frame(notebook)
+        notebook.add(short_tab, text=_("preferences_shortcuts"))
+
+        shortcuts = [
+            (_("shortcut_export"), "Ctrl+E"),
+            (_("shortcut_save"), "Ctrl+S"),
+            (_("shortcut_load_props"), "Ctrl+L"),
+            (_("shortcut_refresh"), "F5"),
+            (_("shortcut_cancel"), "Esc"),
+            (_("shortcut_find"), "Ctrl+F"),
+            (_("shortcut_preferences"), "Ctrl+,"),
+        ]
+
+        for i, (name, key) in enumerate(shortcuts):
+            ttk.Label(short_tab, text=f"{name}:").grid(row=i, column=0, sticky="w", padx=10, pady=5)
+            ttk.Label(short_tab, text=key, font=("", 9, "bold")).grid(row=i, column=1, sticky="w", padx=10, pady=5)
+
+        # Buttons
+        btn_frame = ttk.Frame(dialog)
+        btn_frame.pack(fill="x", padx=10, pady=10)
+        ttk.Button(btn_frame, text="OK", command=dialog.destroy).pack(side="right", padx=5)
+        ttk.Button(btn_frame, text="Cancel", command=dialog.destroy).pack(side="right", padx=5)
+
+    def show_shortcuts(self):
+        """Show keyboard shortcuts dialog."""
+        dialog = tk.Toplevel(self.root)
+        dialog.title(_("menu_shortcuts"))
+        dialog.geometry("400x350")
+        dialog.transient(self.root)
+        dialog.grab_set()
+
+        ttk = __import__('tkinter.ttk', fromlist=['*'])
+
+        shortcuts = [
+            ("Export", "Ctrl+E", "Start export"),
+            ("Save Config", "Ctrl+S", "Save current configuration"),
+            ("Load Properties", "Ctrl+L", "Load properties from Notion"),
+            ("Refresh / Reload", "F5", "Refresh current view"),
+            ("Cancel Export", "Esc", "Cancel running export"),
+            ("Find in Log", "Ctrl+F", "Search in log output"),
+            ("Preferences", "Ctrl+,", "Open preferences dialog"),
+            ("Switch Tab", "Ctrl+1..8", "Jump to tab 1-8"),
+            ("Next Tab", "Ctrl+Tab", "Go to next tab"),
+            ("Previous Tab", "Ctrl+Shift+Tab", "Go to previous tab"),
+        ]
+
+        for i, (name, key, desc) in enumerate(shortcuts):
+            ttk.Label(dialog, text=f"{key}").grid(row=i, column=0, sticky="w", padx=15, pady=3)
+            ttk.Label(dialog, text=name, font=("", 9, "bold")).grid(row=i, column=1, sticky="w", padx=10, pady=3)
+            ttk.Label(dialog, text=desc, style="Hint.TLabel").grid(row=i, column=2, sticky="w", padx=10, pady=3)
+
+        ttk.Button(dialog, text="OK", command=dialog.destroy).pack(pady=15)
+
+    def show_about(self):
+        """Show about dialog."""
+        messagebox.showinfo(
+            f"About {EN['title_prefix']}",
+            f"{EN['title_prefix']}\nVersion {self.app.APP_VERSION}  ({self.app.APP_STAGE})\n\n"
+            "This is a BETA release: all main features work, but it is still new and being tested.\n"
+            "Bugs are expected. Please keep a copy of important data, and report problems "
+            "together with the text from the log box at the bottom of the window.",
+        )
+
+    def validate_settings(self):
+        """Validate current settings."""
+        try:
+            c = self.app.collect()
+        except Exception:
+            messagebox.showerror("Invalid value", "Check the numeric fields.")
+            return
+
+        errors = []
+        if not c.get("token", "").strip():
+            errors.append("• Notion token is required")
+        if not c.get("database", "").strip():
+            errors.append("• Database/page link is required")
+        if not c.get("save_dir", "").strip():
+            errors.append("• Output folder is required")
+
+        formats = [k for k in ["pdf", "html", "md", "txt", "docx", "json", "tex", "images"] if c.get(f"fmt_{k}")]
+        if not formats:
+            errors.append("• At least one export format must be selected")
+
+        if c.get("gemini_math_ocr") and not c.get("gemini_api_key", "").strip():
+            errors.append("• Gemini API key required for Math OCR")
+
+        if errors:
+            messagebox.showerror("Validation Failed", "The following issues were found:\n\n" + "\n".join(errors))
+        else:
+            messagebox.showinfo("Validation Passed", "All settings are valid!")
+
+    def clear_cache(self):
+        """Clear export cache."""
+        cache_file = os.path.join(CONFIG_DIR, "export_cache.json")
+        try:
+            if os.path.exists(cache_file):
+                os.remove(cache_file)
+                messagebox.showinfo("Cache Cleared", "Export cache has been cleared.")
+            else:
+                messagebox.showinfo("Cache Cleared", "No cache file found.")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to clear cache: {e}")
+
+    # Window geometry persistence
+    def _get_geometry_file(self) -> str:
+        """Get path to window geometry file."""
+        return os.path.join(CONFIG_DIR, "window_geometry.json")
+
+    def _save_window_geometry(self):
+        """Save window geometry to file."""
+        if not self.prefs_remember_window.get() if hasattr(self, 'prefs_remember_window') else True:
+            return
+        try:
+            geom = {
+                "geometry": self.root.geometry(),
+                "state": self.root.state(),
+            }
+            with open(self._get_geometry_file(), "w") as f:
+                json.dump(geom, f)
+        except Exception:
+            pass
+
+    def _load_window_geometry(self):
+        """Load window geometry from file."""
+        try:
+            with open(self._get_geometry_file(), "r") as f:
+                geom = json.load(f)
+            self._window_geometry = geom
+        except Exception:
+            self._window_geometry = None
+
+    def apply_window_geometry(self):
+        """Apply saved window geometry."""
+        if self._window_geometry:
+            try:
+                self.root.geometry(self._window_geometry.get("geometry", ""))
+                state = self._window_geometry.get("state", "normal")
+                if state == "zoomed":
+                    self.root.state("zoomed")
+            except Exception:
+                pass
 
 
 def main():
@@ -394,4 +1433,8 @@ def main():
     presenter = Presenter(root, app_ui)
     app_ui.presenter = presenter  # Link presenter to UI
     root.protocol("WM_DELETE_WINDOW", presenter.on_close)
+
+    # Apply saved window geometry
+    presenter.apply_window_geometry()
+
     root.mainloop()

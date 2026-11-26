@@ -3,6 +3,7 @@
 This module provides:
 - Light/dark/system theme switching
 - HiDPI support
+- UI font scaling
 - Custom ttk styling
 """
 
@@ -73,12 +74,13 @@ class ThemeManager:
     def __init__(self, root):
         self.root = root
         self.current_theme = "light"  # light, dark, or system
+        self.ui_scale = 1.0
         self.style = ttk.Style()
         self._configure_base_style()
 
     def _configure_base_style(self):
         """Set up base ttk styling that works across themes."""
-        # Default font
+        # Default font - will be scaled by set_ui_scale
         try:
             base_font = ("Segoe UI", 10) if sys.platform.startswith("win") else ("Helvetica", 10)
             self.style.configure(".", font=base_font)
@@ -95,7 +97,34 @@ class ThemeManager:
     def apply_theme(self, theme_name: str = "light"):
         """Apply a theme by name."""
         self.current_theme = theme_name
-        self._apply_light_theme() if theme_name == "light" else self._apply_dark_theme()
+        if theme_name == "system":
+            self._apply_system_theme()
+        elif theme_name == "light":
+            self._apply_light_theme()
+        else:
+            self._apply_dark_theme()
+
+    def _apply_system_theme(self):
+        """Apply theme based on system preference."""
+        if self._is_system_dark():
+            self._apply_dark_theme()
+        else:
+            self._apply_light_theme()
+
+    def _is_system_dark(self) -> bool:
+        """Detect if system theme is dark (Windows 10+)."""
+        if sys.platform != "win32":
+            return False
+        try:
+            import ctypes
+            import winreg
+
+            # Check Windows registry for app theme
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize") as key:
+                value, _ = winreg.QueryValueEx(key, "AppsUseLightTheme")
+                return value == 0
+        except Exception:
+            return False
 
     def _apply_light_theme(self):
         """Apply light theme styling."""
@@ -110,26 +139,61 @@ class ThemeManager:
     def _apply_dark_theme(self):
         """Apply dark theme styling."""
         dark = DARK_THEMES.get("Dark", {})
-        self.style.configure("TFrame", background=dark.get("bg", "#1f2937"))
-        self.style.configure("TLabel", background=dark.get("bg", "#1f2937"), foreground=dark.get("fg", "#f3f4f6"))
-        # Note: ttk widgets like ttk.Button don't easily support dark themes
-        # The root window handles dark mode via background color
+        bg = dark.get("bg", "#1f2937")
+        fg = dark.get("fg", "#f3f4f6")
+        hint = dark.get("hint", "#9ca3af")
+        btn_bg = dark.get("button", "#374151")
+
+        self.style.configure("TFrame", background=bg)
+        self.style.configure("TLabel", background=bg, foreground=fg)
+        self.style.configure("TLabelframe", background=bg, foreground=fg)
+        self.style.configure("TLabelframe.Label", background=bg, foreground=fg)
+        self.style.configure("TEntry", fieldbackground="#374151", foreground=fg)
+        self.style.configure("TCombobox", fieldbackground="#374151", foreground=fg)
+        self.style.configure("TSpinbox", fieldbackground="#374151", foreground=fg)
+        self.style.configure("TButton", background=btn_bg, foreground=fg)
+        self.style.configure("TCheckbutton", background=bg, foreground=fg)
+        self.style.configure("TRadiobutton", background=bg, foreground=fg)
+        self.style.configure("TNotebook", background=bg)
+        self.style.configure("TNotebook.Tab", background=dark.get("tab", "#374151"), foreground=fg)
+        self.style.map("TNotebook.Tab", background=[("selected", bg)], foreground=[("selected", fg)])
+        self.style.configure("Vertical.TScrollbar", background=btn_bg, troughcolor=bg)
+        self.style.configure("Hint.TLabel", foreground=hint)
+
+        # Update root background
+        self.root.configure(background=bg)
 
     def is_dark(self) -> bool:
         """Check if current theme is dark."""
+        if self.current_theme == "system":
+            return self._is_system_dark()
         return self.current_theme == "dark"
 
     def supports_system_theme(self) -> bool:
         """Check if we can detect system theme preference."""
-        # On Windows 10+, we could check registry
-        # For now, return False - user preference takes precedence
-        return False
+        return sys.platform == "win32"
 
     def get_accent_color(self) -> str:
         """Get the current accent color for the active theme."""
-        if self.current_theme == "dark":
+        if self.is_dark():
             return DARK_THEMES["Dark"].get("accent", "#60a5fa")
         return "#37352f"  # Default accent
+
+    def set_ui_scale(self, scale: float):
+        """Set UI font scale factor (0.8 - 1.5)."""
+        self.ui_scale = max(0.8, min(1.5, scale))
+        try:
+            base_size = int(10 * self.ui_scale)
+            heading_size = int(15 * self.ui_scale)
+            base_font = ("Segoe UI", base_size) if sys.platform.startswith("win") else ("Helvetica", base_size)
+            heading_font = ("Segoe UI", heading_size, "bold") if sys.platform.startswith("win") else ("Helvetica", heading_size, "bold")
+            self.style.configure(".", font=base_font)
+            self.style.configure("Head.TLabel", font=heading_font)
+            self.style.configure("Hint.TLabel", font=("", int(9 * self.ui_scale)))
+            self.style.configure("Accent.TButton", font=("", int(11 * self.ui_scale), "bold"))
+            self.style.configure("TNotebook.Tab", padding=(int(11 * self.ui_scale), int(6 * self.ui_scale)))
+        except Exception:
+            pass
 
 
 class HiDPISupport:
@@ -145,7 +209,7 @@ class HiDPISupport:
             import ctypes
 
             try:
-                ctypes.windll.shcore.SetProcessDpiAwareness(1)
+                ctypes.windll.shcore.SetProcessDpiAwareness(1)  # PROCESS_PER_MONITOR_DPI_AWARE
             except Exception:
                 ctypes.windll.user32.SetProcessDPIAware()
         except Exception:

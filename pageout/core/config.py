@@ -12,7 +12,7 @@ APP_VERSION = "1.0.0-rc.1"
 APP_STAGE = "RC"
 
 
-CONFIG_VERSION = 3
+CONFIG_VERSION = 4
 
 
 CONFIG_DIR = os.path.join(os.path.expanduser("~"), ".notion_pdf_exporter")
@@ -374,6 +374,18 @@ DEFAULTS = {
     "allow_plaintext_secrets": False,
     # profiling (P1)
     "profile_timing": False,
+    # U2: Look & Navigation
+    "theme": "light",  # light, dark, system
+    "ui_mode": "advanced",  # simple, advanced
+    "ui_scale": 1.0,
+    "window_geometry": "",  # saved window geometry
+    "window_state": "normal",  # normal, zoomed
+    "last_page": "1  Source",  # last active tab
+    # Phase 9: Settings persistence preferences
+    "prefs_auto_save": True,
+    "prefs_remember_window": True,
+    "prefs_confirm_exit": False,
+    "prefs_tooltip_delay": 500,
 }
 
 
@@ -390,6 +402,11 @@ def load_config():
     if old_ver < 2:  # new, more comfortable defaults
         cfg["margin_mm"] = DEFAULTS["margin_mm"]
         cfg["line_spacing"] = DEFAULTS["line_spacing"]
+    if old_ver < CONFIG_VERSION:  # Phase 9: Add settings persistence preferences with defaults
+        cfg.setdefault("prefs_auto_save", DEFAULTS["prefs_auto_save"])
+        cfg.setdefault("prefs_remember_window", DEFAULTS["prefs_remember_window"])
+        cfg.setdefault("prefs_confirm_exit", DEFAULTS["prefs_confirm_exit"])
+        cfg.setdefault("prefs_tooltip_delay", DEFAULTS["prefs_tooltip_delay"])
     cfg["_ver"] = CONFIG_VERSION
     migrated = False
     for key, name in secrets.SECRET_KEYS.items():

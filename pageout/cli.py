@@ -9,6 +9,7 @@ import json
 import os
 import sys
 import threading
+from datetime import datetime
 
 from pageout.core.config import (
     APP_NAME,
@@ -23,6 +24,8 @@ from pageout.core.config import (
     SUB_MODES,
     load_config,
 )
+from pageout.core.profiles import list_profiles, save_profile, load_profile, delete_profile, profile_exists, merge_profile_into_config
+from pageout.core.sources import list_sources, get_source, add_source, delete_source, toggle_pin, extract_id_from_url, source_exists
 from pageout.core.errors import Cancelled
 from pageout.core.pipeline import export
 
@@ -157,9 +160,59 @@ def build_parser():
     e.add_argument("--no-rewrite-links", action="store_true")
     e.add_argument("--profile-timing", action="store_true", help="write timing_report.json with export profiling data")
     e.add_argument("-q", "--quiet", action="store_true")
+    # Profile support
+    e.add_argument("--profile", help="load named profile before applying other settings")
+    e.add_argument("--save-profile", help="save current settings as named profile")
+    e.add_argument("--list-profiles", action="store_true", help="list saved profiles and exit")
+    # Source support
+    e.add_argument("--source", help="load named source (recent database/page)")
+    e.add_argument("--list-sources", action="store_true", help="list saved sources and exit")
+
     sub.add_parser("version", help="print the version")
     i = sub.add_parser("init-config", help="write an example pageout.yaml")
     i.add_argument("path", nargs="?", default="pageout.yaml")
+
+    # Profile subcommands
+    ps = sub.add_parser("profile", help="manage saved profiles")
+    ps_sub = ps.add_subparsers(dest="profile_cmd")
+    ps_list = ps_sub.add_parser("list", help="list all profiles")
+    ps_save = ps_sub.add_parser("save", help="save current config as a profile")
+    ps_save.add_argument("name", help="profile name")
+    ps_load = ps_sub.add_parser("load", help="load a profile and print merged config")
+    ps_load.add_argument("name", help="profile name")
+    ps_delete = ps_sub.add_parser("delete", help="delete a profile")
+    ps_delete.add_argument("name", help="profile name")
+
+    # Source subcommands
+    ss = sub.add_parser("source", help="manage saved sources (databases/pages)")
+    ss_sub = ss.add_subparsers(dest="source_cmd")
+    ss_list = ss_sub.add_parser("list", help="list all saved sources")
+    ss_add = ss_sub.add_parser("add", help="add a new source")
+    ss_add.add_argument("name", help="source name")
+    ss_add.add_argument("url", help="Notion database/page URL or ID")
+    ss_add.add_argument("--type", choices=["Auto-detect", "Database", "Page"], default="Auto-detect", help="source type")
+    ss_add.add_argument("--pin", action="store_true", help="pin this source")
+    ss_delete = ss_sub.add_parser("delete", help="delete a source")
+    ss_delete.add_argument("name", help="source name")
+    ss_pin = ss_sub.add_parser("pin", help="toggle pin status of a source")
+    ss_pin.add_argument("name", help="source name")
+
+    # Queue subcommands
+    qs = sub.add_parser("queue", help="manage export queue")
+    qs_sub = qs.add_subparsers(dest="queue_cmd")
+    qs_list = qs_sub.add_parser("list", help="list all jobs in the queue")
+    qs_add = qs_sub.add_parser("add", help="add current settings as a job to the queue")
+    qs_add.add_argument("--name", help="job name")
+    qs_add.add_argument("--priority", choices=["low", "normal", "high"], default="normal", help="job priority")
+    qs_cancel = qs_sub.add_parser("cancel", help="cancel a job")
+    qs_cancel.add_argument("job_id", help="job ID to cancel")
+    qs_retry = qs_sub.add_parser("retry", help="retry a failed/cancelled job")
+    qs_retry.add_argument("job_id", help="job ID to retry")
+    qs_remove = qs_sub.add_parser("remove", help="remove a job from queue (non-running)")
+    qs_remove.add_argument("job_id", help="job ID to remove")
+    qs_clear = qs_sub.add_parser("clear", help="clear completed/failed/cancelled history")
+    qs_stats = qs_sub.add_parser("stats", help="show queue statistics")
+
     return p
 
 
@@ -179,6 +232,22 @@ incremental: true                   # skip pages that did not change
 
 def make_config(args, warn):
     cfg = load_config()
+
+    # Profile support - load profile FIRST so CLI args can override it
+    if args.profile:
+        if not profile_exists(args.profile):
+            raise UsageError(f"Profile '{args.profile}' not found. Use 'pageout profile list' to see available profiles.")
+        profile_data = load_profile(args.profile)
+        merge_profile_into_config(profile_data, cfg)
+
+    # Source support - load saved source (sets database and source_type)
+    if args.source:
+        src = get_source(args.source)
+        if not src:
+            raise UsageError(f"Source '{args.source}' not found. Use 'pageout source list' to see available sources.")
+        cfg["database"] = src["url"]
+        cfg["source_type"] = src.get("source_type", "Auto-detect")
+
     if args.config:
         apply_settings(cfg, read_settings_file(args.config), warn)
     if args.format:
@@ -218,6 +287,7 @@ def make_config(args, warn):
         cfg["rewrite_links"] = False
     if args.profile_timing:
         cfg["profile_timing"] = True
+
     if not any(cfg.get("fmt_" + f) for f in ALL_FORMATS):
         raise UsageError("No format selected. Use --format, e.g. --format pdf,md")
     if not str(cfg.get("save_dir", "")).strip():
@@ -239,9 +309,185 @@ def main(argv=None, notion=None, stdout=None, stderr=None):
             f.write(EXAMPLE_YAML)
         print(f"Wrote {args.path}", file=out)
         return EXIT_OK
+
+    # Profile subcommands
+    if args.cmd == "profile":
+        if args.profile_cmd == "list":
+            profiles = list_profiles()
+            if profiles:
+                for p in profiles:
+                    print(p, file=out)
+            else:
+                print("No profiles saved.", file=out)
+            return EXIT_OK
+        elif args.profile_cmd == "save":
+            cfg = load_config()
+            # Filter out secrets
+            for key in ("token", "gemini_api_key"):
+                if key in cfg:
+                    cfg[key] = ""
+            save_profile(args.name, cfg)
+            print(f"Profile '{args.name}' saved.", file=out)
+            return EXIT_OK
+        elif args.profile_cmd == "load":
+            if not profile_exists(args.name):
+                print(f"Profile '{args.name}' not found.", file=err)
+                return EXIT_USAGE
+            cfg = load_config()
+            profile_data = load_profile(args.name)
+            merge_profile_into_config(profile_data, cfg)
+            # Filter out secrets before printing
+            for key in ("token", "gemini_api_key"):
+                if key in cfg:
+                    cfg[key] = ""
+            print(json.dumps(cfg, indent=2), file=out)
+            return EXIT_OK
+        elif args.profile_cmd == "delete":
+            if not profile_exists(args.name):
+                print(f"Profile '{args.name}' not found.", file=err)
+                return EXIT_USAGE
+            delete_profile(args.name)
+            print(f"Profile '{args.name}' deleted.", file=out)
+            return EXIT_OK
+        else:
+            build_parser().print_help(out)
+            return EXIT_USAGE
+
+    # Source subcommands
+    if args.cmd == "source":
+        if args.source_cmd == "list":
+            sources = list_sources()
+            if sources:
+                for s in sources:
+                    pin_mark = "📌 " if s.get("pinned") else "  "
+                    print(f"{pin_mark}{s['name']}  ({s.get('source_type', 'Auto-detect')})  {s['url'][:80]}", file=out)
+            else:
+                print("No sources saved.", file=out)
+            return EXIT_OK
+        elif args.source_cmd == "add":
+            if not args.name or not args.url:
+                build_parser().print_help(err)
+                return EXIT_USAGE
+            add_source(args.name, args.url, args.type, args.pin)
+            print(f"Source '{args.name}' added.", file=out)
+            return EXIT_OK
+        elif args.source_cmd == "delete":
+            if not source_exists(args.name):
+                print(f"Source '{args.name}' not found.", file=err)
+                return EXIT_USAGE
+            delete_source(args.name)
+            print(f"Source '{args.name}' deleted.", file=out)
+            return EXIT_OK
+        elif args.source_cmd == "pin":
+            if not source_exists(args.name):
+                print(f"Source '{args.name}' not found.", file=err)
+                return EXIT_USAGE
+            new_status = toggle_pin(args.name)
+            print(f"Source '{args.name}' {'pinned' if new_status else 'unpinned'}.", file=out)
+            return EXIT_OK
+        else:
+            build_parser().print_help(out)
+            return EXIT_USAGE
+
+    # Queue subcommands
+    if args.cmd == "queue":
+        from pageout.core.queue import ExportQueue, JobPriority, JobStatus
+
+        q = ExportQueue()
+        if args.queue_cmd == "list":
+            jobs = q.get_all_jobs()
+            if not jobs:
+                print("Queue is empty.", file=out)
+                return EXIT_OK
+            for job in jobs:
+                status = job.status.value
+                priority = job.priority.name
+                created = job.created_at[:19].replace("T", " ")
+                print(f"{job.id}  [{status}]  [{priority}]  {created}  {job.name}", file=out)
+                if job.message:
+                    print(f"    {job.message}", file=out)
+            return EXIT_OK
+        elif args.queue_cmd == "add":
+            cfg = load_config()
+            # Filter out secrets before adding to queue
+            for key in ("token", "gemini_api_key"):
+                if key in cfg:
+                    cfg[key] = ""
+            priority_map = {"low": JobPriority.LOW, "normal": JobPriority.NORMAL, "high": JobPriority.HIGH}
+            job_id = q.add_job(
+                name=args.name or f"CLI Export {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+                config=cfg,
+                priority=priority_map[args.priority],
+            )
+            print(f"Job added to queue: {job_id}", file=out)
+            return EXIT_OK
+        elif args.queue_cmd == "cancel":
+            if q.cancel_job(args.job_id):
+                print(f"Job {args.job_id} cancelled.", file=out)
+            else:
+                print(f"Job {args.job_id} not found.", file=err)
+                return EXIT_USAGE
+            return EXIT_OK
+        elif args.queue_cmd == "retry":
+            if q.retry_job(args.job_id):
+                print(f"Job {args.job_id} queued for retry.", file=out)
+            else:
+                print(f"Job {args.job_id} not found or not retryable.", file=err)
+                return EXIT_USAGE
+            return EXIT_OK
+        elif args.queue_cmd == "remove":
+            if q.remove_job(args.job_id):
+                print(f"Job {args.job_id} removed.", file=out)
+            else:
+                print(f"Job {args.job_id} not found or cannot be removed (running).", file=err)
+                return EXIT_USAGE
+            return EXIT_OK
+        elif args.queue_cmd == "clear":
+            q.clear_history()
+            print("Queue history cleared.", file=out)
+            return EXIT_OK
+        elif args.queue_cmd == "stats":
+            stats = q.get_stats()
+            for status, count in stats.items():
+                print(f"{status}: {count}", file=out)
+            return EXIT_OK
+        else:
+            build_parser().print_help(out)
+            return EXIT_USAGE
+
     if args.cmd != "export":
         build_parser().print_help(out)
         return EXIT_USAGE
+
+    # Handle --list-profiles, --save-profile, --list-sources on export command
+    if args.list_profiles:
+        profiles = list_profiles()
+        if profiles:
+            for p in profiles:
+                print(p, file=out)
+        else:
+            print("No profiles saved.", file=out)
+        return EXIT_OK
+
+    if args.list_sources:
+        sources = list_sources()
+        if sources:
+            for s in sources:
+                pin_mark = "📌 " if s.get("pinned") else "  "
+                print(f"{pin_mark}{s['name']}  ({s.get('source_type', 'Auto-detect')})  {s['url'][:80]}", file=out)
+        else:
+            print("No sources saved.", file=out)
+        return EXIT_OK
+
+    if args.save_profile:
+        cfg = load_config()
+        for key in ("token", "gemini_api_key"):
+            if key in cfg:
+                cfg[key] = ""
+        save_profile(args.save_profile, cfg)
+        print(f"Profile '{args.save_profile}' saved.", file=out)
+        return EXIT_OK
+
     try:
         cfg = make_config(args, lambda m: print("warning: " + m, file=err))
         documents = None
