@@ -444,6 +444,55 @@ def test_zip_source_parses_ids_and_links(tmp_path):
     assert link.page_id == "b" * 32
 
 
+def _make_zip_with_csv(path):
+    """Create a test zip with a CSV database export."""
+    import io
+
+    with zipfile.ZipFile(path, "w") as z:
+        # Markdown page with ID
+        z.writestr(
+            "Export/Test Page aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.md",
+            "# Test Page\n\nProperty: Value\n\nContent here.",
+        )
+        # CSV database export - Notion format: Name-<32hex>.csv
+        csv_content = "Title,Date,Status,Notes\nRow1,2024-01-15,Done,First row\nRow2,2024-01-16,Pending,Second row\n"
+        z.writestr("Export/Test DB-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.csv", csv_content)
+
+
+def test_zip_source_parses_csv_database(tmp_path):
+    """CSV files from Notion 'Export all' should create Document objects per row."""
+    from pageout.sources.notion_zip import ZipSource
+
+    z = tmp_path / "csv.zip"
+    _make_zip_with_csv(z)
+
+    docs = list(ZipSource(str(z)).documents())
+    doc_by_title = {d.title: d for d in docs}
+
+    # Should have the markdown page and 2 CSV rows
+    assert len(docs) == 3
+
+    # Check markdown page
+    assert "Test Page" in doc_by_title
+    assert doc_by_title["Test Page"].id == "a" * 32
+
+    # Check CSV rows - first column is title by convention
+    assert "Row1" in doc_by_title
+    assert "Row2" in doc_by_title
+
+    # Verify properties are parsed
+    row1 = doc_by_title["Row1"]
+    row2 = doc_by_title["Row2"]
+    assert len(row1.properties) == 4  # Title, Date, Status, Notes
+    assert row1.properties[0].text == "Row1"
+    assert row1.properties[1].text == "2024-01-15"
+    assert row1.properties[2].text == "Done"
+
+    # Check row IDs are derived from DB ID
+    assert row1.id.startswith("b" * 16)
+    assert row2.id.startswith("b" * 16)
+
+
 # ------------------------------------------------------------------ Phase 7: safety
 def test_secrets_are_redacted_from_failures_and_logs(tmp_path, monkeypatch):
     tok = "secret_" + "Z" * 43

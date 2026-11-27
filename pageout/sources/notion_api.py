@@ -1,4 +1,4 @@
-"""Notion API access: rate limiting, pagination, property helpers, block tree."""
+"""Notion API access: rate limiting, pagination, property helpers, block tree, fast markdown."""
 
 import re
 import threading
@@ -9,6 +9,9 @@ from pageout.core.naming import format_date
 
 _API_SEM = threading.Semaphore(3)  # Notion allows ~3 requests/second on average
 _api_timing = None  # Will be set by pipeline
+
+# Block types that are NOT supported by pages.retrieve_markdown
+UNSUPPORTED_MD_BLOCKS = {"table_of_contents", "breadcrumb", "table_row"}
 
 
 def set_api_concurrency(n):
@@ -303,3 +306,55 @@ def strip_private(obj):
     if isinstance(obj, list):
         return [strip_private(x) for x in obj]
     return obj
+
+
+def has_unsupported_markdown_blocks(blocks):
+    """Check if a block tree contains block types not supported by retrieve_markdown."""
+    for b in blocks:
+        t = b.get("type")
+        if t in UNSUPPORTED_MD_BLOCKS:
+            return True
+        if b.get("has_children") or b.get("children"):
+            if has_unsupported_markdown_blocks(b.get("children", [])):
+                return True
+    return False
+
+
+def retrieve_markdown_page(notion, page_id, include_transcript=False):
+    """Retrieve a page's markdown via the Notion API's retrieve_markdown endpoint.
+
+    Returns the markdown string on success, or None if:
+    - The API endpoint is not available (notion-client < 3.x)
+    - The page contains unsupported block types
+    - Any other error occurs
+    """
+    try:
+        # Check if pages.retrieve_markdown is available
+        if not hasattr(notion.pages, "retrieve_markdown"):
+            return None
+
+        result = api(notion.pages.retrieve_markdown, page_id=page_id, include_transcript=include_transcript)
+        return result.get("markdown") if isinstance(result, dict) else result
+    except Exception:
+        return None
+
+
+def retrieve_markdown_with_fallback(notion, page_id, tree, include_transcript=False):
+    """Retrieve markdown for a page, using fast API path with custom converter fallback.
+
+    Returns:
+        (markdown_string, used_fast_api: bool) - markdown and whether fast API was used
+
+    Strategy:
+    1. If fast_markdown is enabled and page has no unsupported blocks, try API
+    2. Fall back to custom converter if API fails or blocks are unsupported
+    """
+    # Check if tree contains unsupported block types
+    if has_unsupported_markdown_blocks(tree if tree else []):
+        return None, False  # Force custom converter
+
+    md = retrieve_markdown_page(notion, page_id, include_transcript)
+    if md is not None:
+        return md, True
+
+    return None, False

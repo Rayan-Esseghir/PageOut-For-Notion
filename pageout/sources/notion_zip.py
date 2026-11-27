@@ -1,9 +1,13 @@
 """Offline source: a Notion "Export -> Markdown & CSV" zip (no token, no network).
 
-EXPERIMENTAL: reads the Markdown files only (CSV database files are ignored). Page links between
-files of the export become real page links, so link rewriting works offline as well.
+Reads Markdown files and CSV database exports. Page links between files of the export become
+real page links, so link rewriting works offline as well.
+
+CSV files are named like "DatabaseName-<id>.csv" and contain database rows that are
+converted to Document objects for export.
 """
 
+import csv
 import hashlib
 import io
 import posixpath
@@ -14,7 +18,8 @@ from urllib.parse import unquote
 from pageout.core.ir import Asset, Block, Document, Media, Property, Span
 from pageout.sources.base import BaseSource
 
-_ID_RE = re.compile(r"\s([0-9a-f]{32})(?:\.md)?$", re.I)
+_ID_RE = re.compile(r"([0-9a-f]{32})", re.I)  # Match 32-hex ID
+_CSV_ID_RE = re.compile(r".*-([0-9a-f]{32})\.csv$", re.I)  # CSV: Name-<id>.csv
 _IMG_EXT = (".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp")
 _INLINE = re.compile(
     r"(?P<code>`[^`]+`)|(?P<bold>\*\*[^*]+\*\*)|(?P<strike>~~[^~]+~~)|(?P<ital>\*[^*\s][^*]*\*)"
@@ -194,25 +199,53 @@ class ZipSource(BaseSource):
     def __init__(self, path):
         self.path = path
 
-    def _load(self, zf, files, mds):
+    def _load(self, zf, files, csvs):
         for info in zf.infolist():
             if info.is_dir():
                 continue
             data = zf.read(info)
             name = info.filename.replace("\\", "/")
             if name.lower().endswith(".zip"):  # Notion nests "...-Part-1.zip"
-                self._load(zipfile.ZipFile(io.BytesIO(data)), files, mds)
+                self._load(zipfile.ZipFile(io.BytesIO(data)), files, csvs)
             elif name.lower().endswith(".md"):
-                mds[name] = data.decode("utf-8", "replace")
+                # Store as (filename, content) tuple
+                csvs[name] = ("md", data.decode("utf-8", "replace"))
+            elif name.lower().endswith(".csv"):
+                # Store CSV data as (filename, csv_data) tuple
+                csvs[name] = ("csv", data)
             elif name.lower().endswith(_IMG_EXT):
                 files[name] = data
 
+    def _parse_csv(self, csv_data):
+        """Parse CSV data from Notion export and return list of property dicts."""
+        props_list = []
+        try:
+            text = csv_data.decode("utf-8-sig", "replace")  # UTF-8 with BOM
+            reader = csv.DictReader(io.StringIO(text))
+            for row in reader:
+                # Convert row dict to Property list
+                props = []
+                for key, val in row.items():
+                    if key:  # Skip empty keys
+                        props.append(Property(key.strip(), "text", val.strip() if val else ""))
+                if props:
+                    props_list.append(props)
+        except Exception:
+            pass
+        return props_list
+
     def documents(self):
-        files, mds = {}, {}
+        files, docs_data = {}, {}
         with zipfile.ZipFile(self.path) as zf:
-            self._load(zf, files, mds)
+            self._load(zf, files, docs_data)
+
         docs = []
-        for name, text in sorted(mds.items()):
+
+        # Process Markdown files
+        for name, (ftype, content) in sorted(docs_data.items()):
+            if ftype != "md":
+                continue
+            text = content
             lines = text.replace("\r\n", "\n").split("\n")
             title, props, k = "", [], 0
             while k < len(lines) and not lines[k].strip():
@@ -229,8 +262,9 @@ class ZipSource(BaseSource):
             base = posixpath.splitext(posixpath.basename(name))[0]
             idm = _ID_RE.search(base)
             pid = idm.group(1).lower() if idm else hashlib.sha1(name.encode()).hexdigest()[:32]
-            title = title or (base[: idm.start()] if idm else base)
-            body = _Parser(lines[k:], posixpath.dirname(name), files).parse()
+            title = title or (base[: idm.start()].strip() if idm else base).rstrip(".- ")
+            md_dir = posixpath.dirname(name)
+            body = _Parser(lines[k:], md_dir, files).parse()
             docs.append(
                 Document(
                     id=pid,
@@ -240,4 +274,32 @@ class ZipSource(BaseSource):
                     source={"id": pid, "title": title, "properties": {}, "blocks": []},
                 )
             )
+
+        # Process CSV files (database exports)
+        for name, (ftype, data) in sorted(docs_data.items()):
+            if ftype != "csv":
+                continue
+            # Extract database ID from filename: "DatabaseName-<id>.csv"
+            idm = _CSV_ID_RE.search(name)
+            db_id = idm.group(1).lower() if idm else hashlib.sha1(name.encode()).hexdigest()[:32]
+            base = posixpath.splitext(posixpath.basename(name))[0]
+            title = base.rsplit("-", 1)[0] if "-" in base else base
+
+            # Parse CSV rows into properties
+            rows_props = self._parse_csv(data)
+
+            # Create a Document for each row in the database
+            for idx, row_props in enumerate(rows_props, 1):
+                row_title = row_props[0].text if row_props else f"Row {idx}"
+                row_id = f"{db_id[:16]}{idx:016x}"[:32]  # Generate unique ID for each row
+                docs.append(
+                    Document(
+                        id=row_id,
+                        title=row_title,
+                        blocks=[],
+                        properties=row_props,
+                        source={"id": row_id, "title": row_title, "properties": {}, "blocks": []},
+                    )
+                )
+
         return docs

@@ -70,6 +70,7 @@ from pageout.sources.notion_api import (
     page_title,
     passes_filter,
     query_all,
+    retrieve_markdown_with_fallback,
     resolve_roots,
     set_api_concurrency,
     set_api_timing as notion_set_api_timing,
@@ -86,8 +87,7 @@ class Item:
         self.stamp = stamp or (page or {}).get("last_edited_time", "")  # full timestamp (cache key)
         self.parent, self.depth = parent, depth
         self.created, self.edited = created, edited
-        self.tree, self.imgs, self.doc = None, [], None
-        self.base, self.dirparts, self.fields = "", [], {}
+        self.tree, self.imgs, self.doc, self.fast_md = None, [], None, None  # fast_md = pre-fetched markdown
 
     @property
     def label(self):
@@ -489,8 +489,37 @@ class Exporter:
         return h + body_html
 
     def text_md(self, it, base_dir, current=None):
+        c = self.cfg
+        r = R(c, "md", base_dir, self.resolver, current)
+
+        # Try fast markdown path via API (P4: Cheaper Markdown)
+        if c.get("fast_markdown", True) and self.notion and it.tree and not it.fast_md:
+            md, used_fast = retrieve_markdown_with_fallback(
+                self.notion, it.id, it.tree, include_transcript=False
+            )
+            if used_fast and md:
+                it.fast_md = md
+            elif md is None and not used_fast:
+                # Need to use custom converter - document() already called during prep
+                pass
+
+        # If we got fast markdown from API, use it; otherwise fall back to custom converter
+        if it.fast_md:
+            body = it.fast_md
+            # Still need to build front matter with properties
+            icon = self._page_icon_text(it)
+            prefix = f"{icon} " if icon else ""
+            fm = {"title": it.title}
+            fm.update(dict(self.prop_rows(it)))
+            if self.hooks.active:
+                doc = self.document(it)
+                fm = dict(self.hooks.transform_frontmatter(fm, doc))
+            title = fm.pop("title", it.title)
+            front = md_front_matter(title, list(fm.items()), c.get("md_preset"))
+            return front + f"\n\n# {prefix}{it.title}\n\n" + body + "\n"
+
+        # Fall back to custom converter
         doc = self.document(it)
-        r = R(self.cfg, "md", base_dir, self.resolver, current)
         body = "\n".join(blocks_md(doc.blocks, r))
         icon = self._page_icon_text(it)
         prefix = f"{icon} " if icon else ""
@@ -499,7 +528,7 @@ class Exporter:
         if self.hooks.active:
             fm = dict(self.hooks.transform_frontmatter(fm, doc))
         title = fm.pop("title", it.title)
-        front = md_front_matter(title, list(fm.items()), self.cfg.get("md_preset"))
+        front = md_front_matter(title, list(fm.items()), c.get("md_preset"))
         return front + f"\n\n# {prefix}{it.title}\n\n" + body + "\n"
 
     def text_txt(self, it):

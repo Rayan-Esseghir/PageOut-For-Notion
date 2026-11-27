@@ -372,6 +372,8 @@ DEFAULTS = {
     "md_preset": MD_PRESETS[0],
     "db_export": DB_EXPORT_MODES[0],
     "allow_plaintext_secrets": False,
+    # P4: Fast markdown via API with fallback
+    "fast_markdown": True,
     # profiling (P1)
     "profile_timing": False,
     # U2: Look & Navigation
