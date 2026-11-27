@@ -18,10 +18,11 @@ The presenter handles:
 import json
 import os
 import tkinter as tk
-from tkinter import colorchooser, messagebox, filedialog
+from tkinter import colorchooser, messagebox, filedialog, ttk
 from typing import Any, Dict, List, Optional, Tuple
 
-from pageout.core.config import load_config, DEFAULTS, save_config, CONFIG_DIR
+from pageout.core.config import load_config, DEFAULTS, save_config, CONFIG_DIR, APP_NAME, APP_VERSION, APP_STAGE
+from pageout.core.diagnostics import run_diagnostics, get_diagnostics_summary
 from pageout.core.errors import Cancelled
 from pageout.core.pipeline import Exporter, export
 from pageout.core.secrets import keyring_available, redact
@@ -1774,14 +1775,312 @@ class Presenter:
         ttk.Button(dialog, text="OK", command=dialog.destroy).pack(pady=15)
 
     def show_about(self):
-        """Show about dialog."""
-        messagebox.showinfo(
-            f"About {EN['title_prefix']}",
-            f"{EN['title_prefix']}\nVersion {self.app.APP_VERSION}  ({self.app.APP_STAGE})\n\n"
-            "This is a BETA release: all main features work, but it is still new and being tested.\n"
-            "Bugs are expected. Please keep a copy of important data, and report problems "
-            "together with the text from the log box at the bottom of the window.",
-        )
+        """Show about dialog with app icon."""
+        dialog = tk.Toplevel(self.root)
+        dialog.title(_("about_title"))
+        dialog.transient(self.root)
+        dialog.grab_set()
+        dialog.resizable(False, False)
+
+        # Get icon from app's window (already set in App.__init__)
+        icon_img = None
+        try:
+            # Use the app's already-loaded icon
+            if hasattr(self.app.root, '_icon_ref') and self.app.root._icon_ref:
+                icon_img = self.app.root._icon_ref
+        except Exception:
+            pass
+
+        # Build content using pack
+        icon_frame = ttk.Frame(dialog)
+        icon_frame.pack(side="left", padx=15, pady=15)
+
+        if icon_img:
+            ttk.Label(icon_frame, image=icon_img).pack()
+        else:
+            ttk.Label(icon_frame, text="📄", font=("Segoe UI", 32)).pack()
+
+        content = ttk.Frame(dialog)
+        content.pack(side="left", fill="both", expand=True, padx=(0, 15), pady=15)
+
+        ttk.Label(content, text=f"{APP_NAME}\n{APP_VERSION} ({APP_STAGE})", font=("", 12, "bold")).pack(anchor="w", pady=(0, 10))
+        ttk.Label(content, text=_("about_description"), font=("", 10)).pack(anchor="w", pady=(0, 8))
+        ttk.Label(content, text=_("about_author"), font=("", 9), foreground="#6b7280").pack(anchor="w", pady=(0, 4))
+        ttk.Label(content, text=_("about_license"), font=("", 9), foreground="#6b7280").pack(anchor="w", pady=(0, 4))
+        ttk.Label(content, text=_("about_copyright"), font=("", 9), foreground="#6b7280").pack(anchor="w", pady=(0, 4))
+
+        ttk.Button(dialog, text="OK", command=dialog.destroy).pack(pady=(0, 15))
+
+        # Center over parent
+        dialog.update_idletasks()
+        x = self.root.winfo_rootx() + self.root.winfo_width() // 2 - dialog.winfo_width() // 2
+        y = self.root.winfo_rooty() + self.root.winfo_height() // 2 - dialog.winfo_height() // 2
+        dialog.geometry(f"+{max(20, x)}+{max(20, y)}")
+
+    def show_onboarding_wizard(self):
+        """Show first-run onboarding wizard."""
+        if not self.app.cfg0.get("first_run_complete", False):
+            dialog = tk.Toplevel(self.root)
+            dialog.title(_("onboarding_welcome"))
+            dialog.transient(self.root)
+            dialog.grab_set()
+            dialog.geometry("520x420")
+            dialog.resizable(False, False)
+
+            # Step tracking
+            self._onboarding_step = tk.IntVar(value=1)
+            self._current_dialog = dialog
+
+            # Build content for each step using pack
+            self._build_onboarding_content(dialog)
+
+            # Navigation buttons frame (at bottom)
+            nav_frame = ttk.Frame(dialog)
+            nav_frame.pack(side="bottom", fill="x", padx=20, pady=10)
+
+            self._back_btn = ttk.Button(nav_frame, text=_("onboarding_back"), command=self._onboarding_back)
+            self._next_btn = ttk.Button(nav_frame, text=_("onboarding_next"), command=self._onboarding_next)
+            self._finish_btn = ttk.Button(nav_frame, text=_("onboarding_finish"), command=self._onboarding_finish)
+            self._cancel_btn = ttk.Button(nav_frame, text=_("onboarding_cancel"), command=dialog.destroy)
+
+            # Refresh initial step
+            self._refresh_onboarding_step()
+
+            # Center over parent
+            dialog.update_idletasks()
+            x = self.root.winfo_rootx() + self.root.winfo_width() // 2 - dialog.winfo_width() // 2
+            y = self.root.winfo_rooty() + self.root.winfo_height() // 2 - dialog.winfo_height() // 2
+            dialog.geometry(f"+{max(20, x)}+{max(20, y)}")
+        else:
+            messagebox.showinfo(_(
+                "first_run_complete"), "✅ " + _("first_run_complete"))
+
+    def _build_onboarding_content(self, dialog):
+        """Build the onboarding dialog content using pack geometry."""
+        # Content frame that will hold all step frames
+        self._content_frame = ttk.Frame(dialog)
+        self._content_frame.pack(fill="both", expand=True, padx=20, pady=10)
+
+        # Welcome frame
+        self._welcome_frame = ttk.Frame(self._content_frame)
+        ttk.Label(self._welcome_frame, text=_("onboarding_welcome"), font=("", 14, "bold")).pack(anchor="w", pady=(0, 10))
+        ttk.Label(self._welcome_frame, text=_("onboarding_welcome_desc"), style="Hint.TLabel", wraplength=480).pack(anchor="w")
+
+        # Step 1: Token
+        self._token_frame = ttk.Frame(self._content_frame)
+        ttk.Label(self._token_frame, text=_("onboarding_token_label"), font=("", 11, "bold")).pack(anchor="w", pady=(0, 5))
+        self.token_entry = ttk.Entry(self._token_frame, width=45)
+        self.token_entry.pack(fill="x", pady=(0, 10))
+        self.token_entry.insert(0, self.app.cfg0.get("token", ""))
+        ttk.Label(self._token_frame, text=_("onboarding_token_desc"), style="Hint.TLabel", wraplength=480).pack(anchor="w")
+
+        # Step 2: Output folder
+        self._folder_frame = ttk.Frame(self._content_frame)
+        folder_row = ttk.Frame(self._folder_frame)
+        folder_row.pack(fill="x", pady=(0, 10))
+        ttk.Label(folder_row, text=_("onboarding_output_folder"), font=("", 11, "bold")).pack(side="left", anchor="w")
+        save_dir_var = self.app.V.get("save_dir", tk.StringVar(value=""))
+        self.folder_entry = ttk.Entry(folder_row, textvariable=save_dir_var, width=40)
+        self.folder_entry.pack(side="left", fill="x", expand=True, padx=(10, 0))
+        browse_btn = ttk.Button(folder_row, text=_("onboarding_browse"), command=self._browse_output_folder)
+        browse_btn.pack(side="left", padx=(4, 0))
+        ttk.Label(self._folder_frame, text=_("onboarding_output_folder_desc"), style="Hint.TLabel", wraplength=480).pack(anchor="w")
+
+        # Hide all frames initially
+        self._welcome_frame.pack_forget()
+        self._token_frame.pack_forget()
+        self._folder_frame.pack_forget()
+
+    def _refresh_onboarding_step(self):
+        """Refresh the onboarding dialog based on current step using pack."""
+        step = self._onboarding_step.get()
+
+        # Hide all frames
+        for f in [self._welcome_frame, self._token_frame, self._folder_frame]:
+            f.pack_forget()
+
+        # Show current step frame
+        if step == 1:
+            self._welcome_frame.pack(fill="both", expand=True)
+        elif step == 2:
+            self._token_frame.pack(fill="both", expand=True)
+        elif step == 3:
+            self._folder_frame.pack(fill="both", expand=True)
+
+        # Update navigation buttons
+        self._update_nav_buttons(step)
+
+    def _update_nav_buttons(self, step=None):
+        """Update navigation button visibility."""
+        step = step or self._onboarding_step.get()
+        # Show/hide buttons based on step
+        if step == 1:
+            self._back_btn.pack_forget()
+            self._next_btn.pack(side="left", padx=5)
+            self._finish_btn.pack_forget()
+            self._cancel_btn.pack(side="right", padx=5)
+        elif step == 2:
+            self._back_btn.pack(side="left", padx=5)
+            self._next_btn.pack(side="left", padx=5)
+            self._finish_btn.pack_forget()
+            self._cancel_btn.pack(side="right", padx=5)
+        elif step == 3:
+            self._back_btn.pack(side="left", padx=5)
+            self._next_btn.pack_forget()
+            self._finish_btn.pack(side="left", padx=5)
+            self._cancel_btn.pack(side="right", padx=5)
+
+    def _browse_output_folder(self):
+        """Browse for output folder."""
+        folder = filedialog.askdirectory(initialdir=self.app.V.get("save_dir", ""))
+        if folder:
+            self.app.V.get("save_dir").set(folder) if "save_dir" in self.app.V else None
+
+    def _onboarding_back(self):
+        """Go to previous step."""
+        current = self._onboarding_step.get()
+        if current > 1:
+            self._onboarding_step.set(current - 1)
+            self._refresh_onboarding_step()
+
+    def _onboarding_next(self):
+        """Go to next step."""
+        current = self._onboarding_step.get()
+        if current < 3:
+            self._onboarding_step.set(current + 1)
+            self._refresh_onboarding_step()
+
+    def _onboarding_finish(self):
+        """Complete onboarding and close dialog."""
+        token = self.token_entry.get().strip()
+        if token:
+            self.app.V["token"].set(token)
+
+        # Update cfg0 and persist token to config
+        self.app.cfg0["token"] = token
+
+        # Mark as complete in config
+        self.app.V["first_run_complete"].set(True)
+        self.app.cfg0["first_run_complete"] = True
+
+        # Save the config to persist the changes
+        save_config(self.app.cfg0)
+
+        self._current_dialog.destroy()
+        messagebox.showinfo("✅ " + _("first_run_complete"), _("first_run_complete"))
+
+    def check_my_setup(self):
+        """Run system diagnostics and show results."""
+        dialog = tk.Toplevel(self.root)
+        dialog.title(_("check_setup_title"))
+        dialog.transient(self.root)
+        dialog.grab_set()
+        dialog.geometry("560x520")
+        dialog.resizable(True, True)
+
+        # Store results for copy function
+        self._diagnostics_results = None
+
+        ttk.Label(dialog, text=_("check_setup_desc"), style="Hint.TLabel").pack(anchor="w", padx=15, pady=(10, 5))
+
+        # Results frame
+        results_frame = ttk.Frame(dialog)
+        results_frame.pack(fill="both", expand=True, padx=15, pady=5)
+
+        # Treeview for results
+        tree = ttk.Treeview(results_frame, columns=("status", "message", "detail"), show="tree headings", height=12)
+        tree.heading("#0", text=_("Check"))
+        tree.heading("#1", text="Status")
+        tree.heading("#2", text=_("diag_message"))
+        tree.column("#0", width=200, anchor="w")
+        tree.column("#1", width=80, anchor="center")
+        tree.column("#2", width=300, anchor="w")
+
+        # Status tags
+        tree.tag_configure("ok", foreground="#16a34a")
+        tree.tag_configure("warning", foreground="#d97706")
+        tree.tag_configure("error", foreground="#dc2626")
+        tree.tag_configure("info", foreground="#2563eb")
+
+        vsb = ttk.Scrollbar(results_frame, orient="vertical", command=tree.yview)
+        tree.configure(yscrollcommand=vsb.set)
+
+        tree.pack(side="left", fill="both", expand=True)
+        vsb.pack(side="right", fill="y")
+
+        # Status bar
+        status_var = tk.StringVar(value=_("check_setup_running"))
+        status_bar = ttk.Label(dialog, textvariable=status_var, style="Hint.TLabel")
+        status_bar.pack(side="bottom", fill="x", padx=5, pady=2)
+
+        # Button frame
+        btn_frame = ttk.Frame(dialog)
+
+        copy_btn = ttk.Button(btn_frame, text=_("check_setup_copy"), command=self._copy_diagnostics_to_clipboard)
+        copy_btn.pack(side="left", padx=5, pady=5)
+
+        ttk.Button(btn_frame, text="OK", command=dialog.destroy).pack(side="right", padx=5, pady=5)
+        btn_frame.pack(side="bottom", fill="x", padx=5, pady=5)
+
+        # Run diagnostics in background
+        def run_and_populate():
+            tree.delete(*tree.get_children())
+
+            results = run_diagnostics(self.app.cfg0)
+            self._diagnostics_results = results
+
+            for r in results:
+                status = r.get("status", "INFO")
+                detail = r.get("detail", "")
+                tags = [status.lower()]
+
+                item = tree.insert("", "end", text=r.get("name", "Check"),
+                                   values=(status, r.get("message", ""), detail),
+                                   tags=tags)
+
+                # Expand detail for errors/warnings
+                if status in ("ERROR", "WARNING"):
+                    tree.item(item, open=True)
+
+            dialog.title(f"{_('check_setup_title')} - {_('check_setup_done')}")
+
+        # Start diagnostics
+        tree.insert("", "end", text=_("check_setup_running"), values=(_("check_setup_running", "", "")))
+        dialog.after(100, run_and_populate)
+
+    def _copy_diagnostics_to_clipboard(self):
+        """Copy diagnostics results to clipboard with redaction."""
+        results = self._diagnostics_results
+        if not results:
+            messagebox.showinfo(_("check_setup_copy"), _("check_setup_copy_no_data"))
+            return
+
+        # Build the text with redaction
+        lines = []
+        for r in results:
+            name = r.get("name", "Unknown")
+            status = r.get("status", "INFO")
+            message = r.get("message", "")
+            detail = r.get("detail", "")
+
+            # Redact secrets from detail
+            detail = redact(detail, self.app.cfg0.get("token", ""))
+
+            lines.append(f"{name}: {status}")
+            lines.append(f"  {message}")
+            if detail:
+                lines.append(f"  Detail: {detail}")
+            lines.append("")
+
+        text_to_copy = "\n".join(lines)
+
+        try:
+            self.root.clipboard_clear()
+            self.root.clipboard_append(text_to_copy)
+            self.root.update()  # Required on some platforms
+            messagebox.showinfo(_("check_setup_copy"), _("check_setup_copy_success"))
+        except Exception as e:
+            messagebox.showerror(_("check_setup_copy"), f"{_('check_setup_copy')}: {e}")
 
     def validate_settings(self):
         """Validate current settings."""

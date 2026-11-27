@@ -108,18 +108,19 @@ def _windows_integration():
 def apply_icon(root):
     """
     Set the window icon.  Search order:
-      1. pageout.ico  (custom PageOut multi-res icon - best on Windows)
-      2. icon.ico     (backward compatibility)
-      3. icon.png     (cross-platform)
-      4. icon.jpg     (project has this)
+      1. assets/pageout.ico  (custom PageOut multi-res icon - best on Windows)
+      2. assets/icon.ico     (backward compatibility)
+      3. assets/icon.png     (cross-platform)
+      4. assets/icon.jpg     (project has this)
       5. Programmatic PIL icon
       6. No icon (silent fallback)
     """
     # Try custom PageOut icon first, then fall back to old names
+    # Icons are in the assets/ subdirectory
+    assets_dir = resource_path("").parent / "pageout" / "assets"
     for name in ("pageout", "icon"):
-        base = resource_path(name)
         for ext in (".ico", ".png", ".jpg", ".jpeg"):
-            p = base.with_suffix(ext)
+            p = assets_dir / (name + ext)
             if p.exists():
                 try:
                     if ext == ".ico":
@@ -768,6 +769,10 @@ class App:
         self.presenter = Presenter(self.root, self)
         self.shell = create_shell(self.root, self, self.presenter)
 
+        # Show onboarding wizard on first run
+        if not self.cfg0.get("first_run_complete", False):
+            self.presenter.show_onboarding_wizard()
+
         # Apply saved window geometry
         self.presenter.apply_window_geometry()
 
@@ -812,11 +817,6 @@ class App:
         self.bar.pack(side="bottom", fill="x", padx=12, pady=2)
         run.pack(side="bottom", fill="x", padx=12, pady=4)
         sumlab.pack(side="bottom", fill="x", padx=14)
-        # Note: shell handles the sidebar + content area; no notebook (self.nb) needed
-        for k in FORMATS + ["images"]:
-            V["fmt_" + k].trace_add("write", self.update_summary)
-        V["save_dir"].trace_add("write", self.update_summary)
-        self.update_summary()
 
     # ========================================================================
     # PAGE BUILDER METHODS (extracted from old build() for U2 shell integration)

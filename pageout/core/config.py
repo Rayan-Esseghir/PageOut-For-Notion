@@ -389,6 +389,9 @@ DEFAULTS = {
     # Phase 8: Font preferences
     "font_favorites": '["Inter", "Roboto", "Segoe UI", "Arial", "Source Sans 3"]',
     "font_recent": "[]",
+    # U6: Onboarding & help
+    "first_run_complete": False,
+    "has_seen_onboarding": False,
 }
 
 

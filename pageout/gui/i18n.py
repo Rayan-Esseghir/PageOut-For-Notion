@@ -424,6 +424,72 @@ EN = {
     # Reset per section
     "reset_section": "Reset",
     "section_modified": "● Modified",
+
+    # === U6: Onboarding & Help ===
+    # First-run wizard
+    "first_run_wizard_title": "Welcome to PageOut",
+    "first_run_step1": "Step 1: Notion Integration Token",
+    "first_run_step1_desc": "Get your token from notion.so/my-integrations and paste it below.",
+    "first_run_step2": "Step 2: Test Export",
+    "first_run_step2_desc": "Let's do a quick test export to make sure everything works.",
+    "first_run_step3": "Step 3: Set Output Folder",
+    "first_run_step3_desc": "Choose where your PDF files will be saved.",
+    "first_run_complete": "First run complete!",
+    "first_run_skip": "Skip first run (you can run it later from Help menu)",
+    "onboarding_welcome": "PageOut Setup Wizard",
+    "onboarding_welcome_desc": "Let's configure PageOut with your Notion account.",
+    "onboarding_token_label": "Integration Token",
+    "onboarding_token_desc": "Paste your Notion integration token here.",
+    "onboarding_test_export": "Test Export",
+    "onboarding_test_export_desc": "Export a sample page to verify setup.",
+    "onboarding_output_folder": "Output Folder",
+    "onboarding_output_folder_desc": "Choose where to save exported files.",
+    "onboarding_browse": "Browse…",
+    "onboarding_next": "Next",
+    "onboarding_back": "Back",
+    "onboarding_finish": "Finish Setup",
+    "onboarding_cancel": "Cancel",
+
+    # Help menu items
+    "check_my_setup": "Check my setup",
+    "check_setup_title": "System Diagnostics",
+    "check_setup_desc": "Run system checks to troubleshoot export issues.",
+    "check_setup_running": "Running diagnostics…",
+    "check_setup_done": "Diagnostics complete!",
+    "check_setup_copy": "Copy diagnostics",
+    "check_setup_copy_desc": "Copy diagnostics to clipboard (redacted)",
+
+    # About dialog
+    "about_title": "About PageOut for Notion",
+    "about_version": "Version",
+    "about_stage": "Build",
+    "about_description": "Export Notion pages to PDF, HTML, Markdown, LaTeX, and more.",
+    "about_author": "Created by Rayan Esseghir",
+    "about_license": "MIT License",
+    "about_check_updates": "Check for updates",
+    "about_copyright": "© 2024 Rayan Esseghir",
+
+    # Diagnostics results
+    "diag_status_ok": "OK",
+    "diag_status_warning": "WARNING",
+    "diag_status_error": "ERROR",
+    "diag_status_info": "INFO",
+
+    # Diagnostic check names
+    "diag_python": "Python Version",
+    "diag_os": "Operating System",
+    "diag_network": "Network Connectivity",
+    "diag_write": "Write Access",
+    "diag_browser": "Browser (Chromium)",
+    "diag_token": "Notion Token",
+    "diag_fonts": "Fonts",
+    "diag_keyring": "OS Keyring",
+    "diag_version": "App Version",
+
+    # Additional U6 keys
+    "first_run_complete_msg": "Setup complete! You can now start exporting your Notion pages.",
+    "check_setup_copy_no_data": "No diagnostics data available.",
+    "check_setup_copy_success": "Diagnostics copied to clipboard (secrets redacted).",
 }
 
 _current_lang = "en"

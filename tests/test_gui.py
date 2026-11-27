@@ -253,3 +253,54 @@ def test_i18n_strings_complete():
     for key in essential_keys:
         assert key in EN, f"Missing i18n key: {key}"
         assert isinstance(EN[key], str), f"i18n key {key} should be a string"
+
+
+# ------------------------------------------------------------------ U6: Onboarding & help
+def test_u6_onboarding_wizard_method_exists():
+    """U6: Verify onboarding wizard method exists."""
+    from pageout.gui import presenter
+    assert hasattr(presenter.Presenter, 'show_onboarding_wizard')
+
+
+def test_u6_check_my_setup_method_exists():
+    """U6: Verify check_my_setup method exists."""
+    from pageout.gui import presenter
+    assert hasattr(presenter.Presenter, 'check_my_setup')
+
+
+def test_u6_show_about_method_exists():
+    """U6: Verify show_about method exists."""
+    from pageout.gui import presenter
+    assert hasattr(presenter.Presenter, 'show_about')
+
+
+def test_u6_copy_diagnostics_method_exists():
+    """U6: Verify copy diagnostics method exists."""
+    from pageout.gui import presenter
+    assert hasattr(presenter.Presenter, '_copy_diagnostics_to_clipboard')
+
+
+def test_u6_diagnostics_module_exists():
+    """U6: Verify diagnostics module has required functions."""
+    from pageout.core import diagnostics
+    assert hasattr(diagnostics, 'run_diagnostics')
+    assert hasattr(diagnostics, 'get_diagnostics_summary')
+    assert hasattr(diagnostics, 'DiagnosticResult')
+    assert hasattr(diagnostics, 'DiagnosticsCollector')
+
+
+def test_u6_secrets_redact_function():
+    """U6: Verify secrets redact function works correctly."""
+    from pageout.core import secrets
+
+    # Test basic redaction
+    token = "secret_ABCDEFGHIJKLMNOPQRSTUVWXYZ123456"
+    text_with_token = f"Error: {token} was not found"
+    redacted = secrets.redact(text_with_token, [token])
+    assert token not in redacted
+    assert "***" in redacted
+
+    # Test pattern-based redaction
+    text_with_api_key = "Key AIza123456789012345678901234567890ABCDEFGHIJKLMNO"
+    redacted = secrets.redact(text_with_api_key)
+    assert "AIza" not in redacted

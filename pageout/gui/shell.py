@@ -103,6 +103,7 @@ class ShellUI:
         # Help menu
         help_menu = tk.Menu(self._menu_bar, tearoff=0)
         self._menu_bar.add_cascade(label=_("menu_help"), menu=help_menu)
+        help_menu.add_command(label=_("check_my_setup"), command=self.presenter.check_my_setup)
         help_menu.add_command(label=_("menu_shortcuts"), command=self.presenter.show_shortcuts)
         help_menu.add_command(label=_("menu_about"), command=self.presenter.show_about)
 
@@ -131,8 +132,10 @@ class ShellUI:
         try:
             from pageout.core.paths import resource_path
             from PIL import Image, ImageTk
+            # Icons are in the assets/ subdirectory
+            assets_dir = resource_path("").parent / "pageout" / "assets"
             for ext in (".png", ".ico"):
-                ip = resource_path("icon" + ext)
+                ip = assets_dir / ("icon" + ext)
                 if ip.exists():
                     icon_img = ImageTk.PhotoImage(
                         Image.open(str(ip)).convert("RGBA").resize((32, 32), Image.LANCZOS)
