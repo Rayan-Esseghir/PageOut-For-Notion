@@ -236,11 +236,6 @@ class App:
         widget.grid(row=r, column=1, sticky="we", padx=8, pady=pady)
         parent.columnconfigure(1, weight=1)
 
-    def tab(self, title):
-        f = ttk.Frame(self.nb)
-        self.nb.add(f, text=title)
-        return f
-
     def combo(self, parent, key, values, state="readonly", width=None):
         kw = {"width": width} if width else {}
         cb = ttk.Combobox(parent, textvariable=self.V[key], values=values, state=state, **kw)
@@ -516,11 +511,6 @@ class App:
         self.root.destroy()
 
     # ---- layout helpers ----
-    def page(self, title):
-        sf = ScrollFrame(self.nb)
-        self.nb.add(sf, text=title)
-        return sf.inner
-
     def group(self, parent, title):
         g = ttk.LabelFrame(parent, text=" " + title + " ", padding=(12, 8))
         g.pack(fill="x", padx=12, pady=(8, 2))

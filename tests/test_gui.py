@@ -160,10 +160,11 @@ def test_presenter_module_structure():
     from pageout.gui import presenter
 
     assert hasattr(presenter, 'Presenter')
-    assert hasattr(presenter, 'main')
 
     from pageout.gui.presenter import Presenter
     assert isinstance(Presenter, type)
+
+    # Note: main() is in app.py, not presenter.py - presenter is the controller only
 
 
 def test_gui_widgets_reusable():

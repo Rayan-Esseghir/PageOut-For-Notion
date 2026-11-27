@@ -91,7 +91,7 @@ class Presenter:
             c = self.app.collect()
             save_config(c)
             self._unsaved_changes = False
-            self._last_config_save = tk.datetime.datetime.now()
+            self._last_config_save = __import__('datetime').datetime.now()
         except Exception:
             # Silently ignore auto-save failures
             pass
@@ -139,7 +139,7 @@ class Presenter:
                         self.app.V[key].set(str(val))
             # Update unsaved changes tracking
             self._unsaved_changes = False
-            self._last_config_save = tk.datetime.datetime.now()
+            self._last_config_save = __import__('datetime').datetime.now()
         except Exception as e:
             # Log but don't crash
             pass
@@ -1561,20 +1561,3 @@ class Presenter:
                     self.root.state("zoomed")
             except Exception:
                 pass
-
-
-def main():
-    """Main entry point for the GUI presenter module."""
-    import tkinter as tk
-    from pageout.gui.app import App
-
-    root = tk.Tk()
-    app_ui = App()
-    presenter = Presenter(root, app_ui)
-    app_ui.presenter = presenter  # Link presenter to UI
-    root.protocol("WM_DELETE_WINDOW", presenter.on_close)
-
-    # Apply saved window geometry
-    presenter.apply_window_geometry()
-
-    root.mainloop()
