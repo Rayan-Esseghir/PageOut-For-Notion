@@ -50,17 +50,37 @@ from pageout.core.config import (
 from pageout.core.database import index_html_body, index_markdown, write_csv
 from pageout.core.errors import Cancelled, LoginRequired
 from pageout.core.ir import Asset, plain_text
+
+# Import sync module for Phase 16
+try:
+    from pageout.core.sync import (
+        SYNC_TARGETS,
+        sync_to_local_folder,
+        sync_to_git,
+        sync_to_gdrive,
+        sync_to_dropbox,
+        sync_to_s3,
+        perform_sync,
+        SyncReport,
+    )
+except ImportError:
+    SYNC_TARGETS = ["None"]
+    sync_to_local_folder = sync_to_gdrive = sync_to_dropbox = sync_to_s3 = sync_to_git = None
+    perform_sync = SyncReport = None
 from pageout.core.ir import walk as walk_ir
 from pageout.core.naming import build_name, clean_filename, format_date
 from pageout.core.resolver import Resolver
 from pageout.core.secrets import redact
 from pageout.plugins.hooks import Hooks
 from pageout.renderers.base import R
+from pageout.renderers.asciidoc import build_asciidoc, blocks_asciidoc
 from pageout.renderers.docx import build_docx
+from pageout.renderers.epub import build_epub
 from pageout.renderers.html import _page_icon_html, blocks_html, esc, props_html, wrap_html
 from pageout.renderers.latex import blocks_tex, build_complete_latex, escape_tex
 from pageout.renderers.markdown import blocks_md, md_front_matter
 from pageout.renderers.pdf import launch_context, pdf_kwargs, remove_blank_pages, render_notion_page
+from pageout.renderers.rst import build_rst, blocks_rst
 from pageout.renderers.txt import blocks_txt
 from pageout.sources.notion_api import (
     api,
@@ -139,7 +159,8 @@ class Exporter:
     # ---- sources ----
     def fetch_roots(self):
         c = self.cfg
-        roots = resolve_roots(self.notion, c["database"], c["source_type"])
+        extra_sources = c.get("sources", [])
+        roots = resolve_roots(self.notion, c["database"], c["source_type"], extra_sources=extra_sources)
         roots = [p for p in roots if passes_filter(p, c["filter_prop"], c["filter_op"], c["filter_value"])]
         roots = sort_pages(roots, c["sort_by"], c["sort_desc"])
         roots = [p for p in roots if self.hooks.filter_page(self._hook_info(p))]
@@ -609,6 +630,11 @@ class Exporter:
             return
         name = clean_filename(c["merged_name"]) or "All_Pages"
         date_fmt = c.get("date_format_props", "YYYY-MM-DD")
+
+        if mode == DB_EXPORT_MODES[4]:  # Group by mode
+            self._write_group_by_export(items, formats, name, date_fmt)
+            return
+
         if mode == DB_EXPORT_MODES[3]:
             path = os.path.join(c["save_dir"], name + ".csv")
             write_csv(path, items, date_fmt, self.props_of)
@@ -626,11 +652,81 @@ class Exporter:
             with open(idx, "w", encoding="utf-8") as fh:
                 if f == "html":
                     fh.write(
-                        wrap_html(name, index_html_body(name, items, link, idx, date_fmt, with_table, self.props_of), c)
+                        wrap_html(name, index_html_body(name, items, link, idx, date_fmt, with_table, self.props_of, c), c)
                     )
                 else:
-                    fh.write(index_markdown(name, items, link, idx, date_fmt, with_table, self.props_of))
+                    fh.write(index_markdown(name, items, link, idx, date_fmt, with_table, self.props_of, c))
             self.log(f"Index written: {idx}")
+
+    def _write_group_by_export(self, items, formats, base_name, date_fmt):
+        """Write exports grouped by a property value (one file per group)."""
+        c = self.cfg
+        group_by_prop = c.get("group_by", "").strip()
+        if not group_by_prop:
+            self.log("Group by: no property specified, skipping.")
+            return
+
+        first = next((f for f in ("html", "md", "pdf", "docx", "txt", "tex", "json") if f in formats), None)
+        if first is None:
+            self.log("Group by export: skipping, no valid export format selected.")
+            return
+
+        # Group items by the property value
+        groups = {}
+        for it in items:
+            group_key = ""
+            for p in self.props_of(it):
+                if p.name.lower() == group_by_prop.lower():
+                    group_key = p.text or p.date or ""
+                    break
+            if group_key not in groups:
+                groups[group_key] = []
+            groups[group_key].append(it)
+
+        # Write each group to its own file
+        total_written = 0
+        from pageout.core.database import index_markdown, index_html_body
+        from pageout.renderers.html import wrap_html
+
+        for group_key, group_items in groups.items():
+            # Clean the group key for filename
+            group_name = clean_filename(str(group_key))[:50] or "Other"
+
+            for fmt in formats:
+                group_idx = os.path.join(c["save_dir"], FOLDERS[fmt], f"{base_name}_{group_name}" + EXTS[fmt])
+                os.makedirs(os.path.dirname(group_idx), exist_ok=True)
+                link = lambda it, lf=fmt: self.path_for(lf, it)  # noqa: E731
+                with open(group_idx, "w", encoding="utf-8") as fh:
+                    if fmt == "html":
+                        fh.write(
+                            wrap_html(f"{base_name} - {group_key}", index_html_body(
+                                f"{base_name} - {group_key}", group_items, link, group_idx,
+                                date_fmt, False, self.props_of, c
+                            ), c)
+                        )
+                    elif fmt == "md":
+                        fh.write(index_markdown(f"{base_name} - {group_key}", group_items, link, group_idx,
+                                            date_fmt, False, self.props_of, c))
+                    elif fmt == "json":
+                        for it in group_items:
+                            try:
+                                data = self.document(it).source
+                                item_data = {
+                                    "id": it.id,
+                                    "title": it.title,
+                                    "properties": data.get("properties", {}),
+                                    "blocks": strip_private(data.get("blocks", [])) if data else []
+                                }
+                                item_path = self.path_for("json", it)
+                                os.makedirs(os.path.dirname(item_path), exist_ok=True)
+                                with open(item_path, "w", encoding="utf-8") as jf:
+                                    json.dump(item_data, jf, ensure_ascii=False, indent=2)
+                            except Exception as e:
+                                self.log(f"Failed to write JSON for {it.title}: {e}")
+                self.log(f"Group-by export written: {group_idx}")
+                total_written += len(group_items)
+
+        self.log(f"Group-by export: {total_written} pages written in {len(groups)} group(s)")
 
     def run(self, selected_roots=None, documents=None):
         c = self.cfg
@@ -847,6 +943,26 @@ class Exporter:
                                     f.write(tex_code)
                                 made_tex.append((it.title, path, self._tex_body))
                                 self.last_tex = tex_code
+                            elif fmt == "epub":
+                                r = R(c, "epub", os.path.dirname(path), self.resolver, path)
+                                icon_text = self._page_icon_text(it)
+                                build_epub(
+                                    it.title,
+                                    icon_text,
+                                    self.prop_rows(it),
+                                    self.document(it).blocks,
+                                    r,
+                                    path,
+                                    c,
+                                )
+                            elif fmt == "rst":
+                                rst_content = build_rst(it.title, self.prop_rows(it), self.document(it).blocks, R(c, "rst"), c)
+                                with open(path, "w", encoding="utf-8") as f:
+                                    f.write(rst_content)
+                            elif fmt == "adoc":
+                                adoc_content = build_asciidoc(it.title, self.prop_rows(it), self.document(it).blocks, R(c, "adoc"), c)
+                                with open(path, "w", encoding="utf-8") as f:
+                                    f.write(adoc_content)
                         except LoginRequired:
                             raise
                         except Exception as e:
@@ -971,6 +1087,12 @@ class Result:
     last_tex: str = ""
     timing: TimingReport = None
     profile_timing: bool = False
+    # Phase 16: Sync result
+    sync_target: str = "None"
+    sync_message: str = ""
+    sync_success: bool = False
+    sync_error: str = ""
+    sync_files: int = 0
 
     @property
     def timing_summary(self) -> str:
@@ -1000,7 +1122,38 @@ def export(
     )
     out, total, failed, timing = ex.run(selected_roots, documents)
     profile = config.get("profile_timing", False)
-    result = Result(out, total, failed, ex.skipped, ex.last_tex, timing=timing, profile_timing=profile)
+
+    # Phase 16: Perform sync after export if configured
+    sync_target = config.get("sync_target", "None")
+    sync_after = config.get("sync_after_export", False)
+    sync_report = SyncReport("None", True, "Sync disabled", 0)
+
+    if sync_after and sync_target != "None" and perform_sync is not None:
+        sync_config = {
+            "sync_path": config.get("sync_path", ""),
+            "sync_branch": config.get("sync_branch", "main"),
+            "gdrive_folder_id": config.get("gdrive_folder_id", ""),
+            "dropbox_path": config.get("dropbox_path", "/exports"),
+            "s3_bucket": config.get("s3_bucket", ""),
+            "s3_prefix": config.get("s3_prefix", "exports"),
+        }
+        sync_report = perform_sync(out, sync_target, sync_config, config)
+        if log:
+            if sync_report.success:
+                log(f"Sync completed: {sync_report.message}")
+            else:
+                log(f"Sync failed: {sync_report.message}")
+
+    result = Result(
+        out, total, failed, ex.skipped, ex.last_tex,
+        timing=timing,
+        profile_timing=profile,
+        sync_target=sync_report.target if sync_report else "None",
+        sync_message=sync_report.message if sync_report else "",
+        sync_success=sync_report.success if sync_report else False,
+        sync_error=sync_report.errors[0] if sync_report and sync_report.errors else "",
+        sync_files=sync_report.files_synced if sync_report else 0,
+    )
     # Write timing JSON if profile_timing is enabled
     if profile and timing:
         timing_path = os.path.join(out, "timing_report.json")

@@ -12,7 +12,7 @@ APP_VERSION = "1.0.0-rc.1"
 APP_STAGE = "RC"
 
 
-CONFIG_VERSION = 4
+CONFIG_VERSION = 5
 
 
 CONFIG_DIR = os.path.join(os.path.expanduser("~"), ".notion_pdf_exporter")
@@ -93,7 +93,10 @@ IMG_PRESETS = ["{page}_{n}", "{title} - {n}", "{date} - {title} - {n}", "{page}_
 MD_PRESETS = ["GFM", "Vanilla", "Obsidian"]
 MATH_ENGINES = ["Bundled (offline)", "CDN (internet)", "None"]
 LATEX_IMG_MODES = ["Include images", "Comments only"]
-DB_EXPORT_MODES = ["None", "Index page", "Table of properties", "CSV file"]
+DB_EXPORT_MODES = ["None", "Index page", "Table of properties", "CSV file", "Group by"]
+
+# Phase 16: Sync targets for post-export
+SYNC_TARGETS = ["None", "Local folder", "Google Drive", "Dropbox", "S3", "Git repo"]
 
 
 # (name, category, is_google_font)   category: sans | serif | mono | arabic
@@ -235,7 +238,7 @@ STYLE_PRESETS = {
 }
 
 
-FORMATS = ["pdf", "html", "md", "txt", "docx", "json", "tex"]
+FORMATS = ["pdf", "html", "md", "txt", "docx", "json", "tex", "epub", "rst", "adoc"]
 
 
 FORMAT_LABELS = {
@@ -246,6 +249,9 @@ FORMAT_LABELS = {
     "docx": "Word",
     "json": "JSON",
     "tex": "LaTeX (.tex)",
+    "epub": "EPUB",
+    "rst": "reStructuredText",
+    "adoc": "AsciiDoc",
     "images": "Images",
 }
 
@@ -258,10 +264,17 @@ FOLDERS = {
     "docx": "Word",
     "json": "JSON",
     "tex": "LaTeX",
+    "epub": "EPUB",
+    "rst": "reStructuredText",
+    "adoc": "AsciiDoc",
 }
 
 
-EXTS = {"pdf": ".pdf", "html": ".html", "md": ".md", "txt": ".txt", "docx": ".docx", "json": ".json", "tex": ".tex"}
+EXTS = {"pdf": ".pdf", "html": ".html", "md": ".md", "txt": ".txt", "docx": ".docx", "json": ".json", "tex": ".tex", "epub": ".epub", "rst": ".rst", "adoc": ".adoc"}
+
+
+# Front matter presets for Hugo/Jekyll static site generators
+FM_PRESETS = ["None", "Hugo", "Jekyll"]
 
 
 GEMINI_MODELS = [
@@ -276,7 +289,9 @@ DEFAULTS = {
     "token": "",
     "remember_token": False,
     "database": "",
+    "workspace": "",
     "source_type": SOURCE_TYPES[0],
+    "sources": [],
     "use_login": True,
     # pages
     "name_format": "{date} - {title}",
@@ -286,6 +301,7 @@ DEFAULTS = {
     "filter_op": "contains",
     "filter_value": "",
     "max_pages": 0,
+    "group_by": "",
     # formats
     "fmt_pdf": True,
     "fmt_html": False,
@@ -354,6 +370,23 @@ DEFAULTS = {
     "cover_page": False,
     # property layout (new)
     "prop_layout": PROP_LAYOUTS[0],
+    # Phase 15: More formats (EPUB, RST, AsciiDoc)
+    "fmt_epub": False,
+    "fmt_rst": False,
+    "fmt_adoc": False,
+    "md_front_matter_preset": FM_PRESETS[0],
+    "epub_language": "en",
+    "epub_author": "PageOut for Notion",
+    "epub_description": "",
+    "epub_publisher": "PageOut for Notion",
+    # Phase 13: Better PDF
+    "table_of_contents": False,
+    "running_header": False,
+    "header_format": "{title}",
+    "watermark_text": "",
+    "watermark_opacity": 0.15,
+    "booklet_mode": False,
+    "cover_page_improved": True,
     # v5.1: design / speed
     "theme_preset": "Notion Classic",
     "heading_font": SAME_AS_BODY,
@@ -394,6 +427,15 @@ DEFAULTS = {
     # U6: Onboarding & help
     "first_run_complete": False,
     "has_seen_onboarding": False,
+    # Phase 16: Sync configuration
+    "sync_target": "None",
+    "sync_path": "",
+    "sync_branch": "main",
+    "gdrive_folder_id": "",
+    "dropbox_path": "/exports",
+    "s3_bucket": "",
+    "s3_prefix": "exports",
+    "sync_after_export": False,
 }
 
 
@@ -415,6 +457,14 @@ def load_config():
         cfg.setdefault("prefs_remember_window", DEFAULTS["prefs_remember_window"])
         cfg.setdefault("prefs_confirm_exit", DEFAULTS["prefs_confirm_exit"])
         cfg.setdefault("prefs_tooltip_delay", DEFAULTS["prefs_tooltip_delay"])
+    if old_ver < 5:  # Phase 13: Add Better PDF settings
+        cfg.setdefault("table_of_contents", DEFAULTS["table_of_contents"])
+        cfg.setdefault("running_header", DEFAULTS["running_header"])
+        cfg.setdefault("header_format", DEFAULTS["header_format"])
+        cfg.setdefault("watermark_text", DEFAULTS["watermark_text"])
+        cfg.setdefault("watermark_opacity", DEFAULTS["watermark_opacity"])
+        cfg.setdefault("booklet_mode", DEFAULTS["booklet_mode"])
+        cfg.setdefault("cover_page_improved", DEFAULTS["cover_page_improved"])
     cfg["_ver"] = CONFIG_VERSION
     migrated = False
     for key, name in secrets.SECRET_KEYS.items():
