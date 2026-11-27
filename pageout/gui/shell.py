@@ -150,20 +150,20 @@ class ShellUI:
 
         # Sidebar navigation items
         nav_items = [
-            ("sidebar_source", "1", lambda: self._switch_page("1  Source")),
-            ("sidebar_pages", "2", lambda: self._switch_page("2  Pages")),
-            ("sidebar_formats", "3", lambda: self._switch_page("3  Formats")),
-            ("sidebar_design", "4", lambda: self._switch_page("4  Design")),
-            ("sidebar_images", "5", lambda: self._switch_page("5  Images")),
-            ("sidebar_pdf", "6", lambda: self._switch_page("6  PDF")),
-            ("sidebar_latex", "7", lambda: self._switch_page("7  LaTeX & AI")),
-            ("sidebar_output", "8", lambda: self._switch_page("8  Output")),
+            ("1  Source", "1  Source"),
+            ("2  Pages", "2  Pages"),
+            ("3  Formats", "3  Formats"),
+            ("4  Design", "4  Design"),
+            ("5  Images", "5  Images"),
+            ("6  PDF", "6  PDF"),
+            ("7  LaTeX & AI", "7  LaTeX & AI"),
+            ("8  Output", "8  Output"),
         ]
 
         self._sidebar = SidebarNav(
             sidebar_frame,
             items=nav_items,
-            on_select=self._on_sidebar_select,
+            command=self._on_sidebar_select,
         )
         self._sidebar.pack(fill="both", expand=True, pady=(8, 0))
 

@@ -62,7 +62,7 @@ from pageout.renderers.html import _HEX_RE
 from pageout.renderers.pdf import login_to_notion
 from pageout.sources.notion_api import load_property_names, page_fields
 from pageout.gui.i18n import EN, _
-from pageout.gui.widgets import ScrollFrame, CheckList, FontPicker, ToolTip, create_tool_tip
+from pageout.gui.widgets import ScrollFrame, CheckList, FontPicker, ToolTip, create_tool_tip, _GENERIC_FONT_ALIAS
 from pageout.gui.theme import ThemeManager, HiDPISupport
 from pageout.gui.shell import create_shell
 
@@ -91,33 +91,49 @@ def _make_programmatic_icon():
         return None
 
 
+def _windows_integration():
+    """
+    Set Windows AppUserModelID so the taskbar shows the correct icon and groups windows correctly.
+    Safe to call on any platform (no-op on non-Windows).
+    """
+    if sys.platform.startswith("win"):
+        try:
+            import ctypes
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("PageOut.Exporter")
+        except Exception:
+            pass
+
+
 def apply_icon(root):
     """
     Set the window icon.  Search order:
-      1. icon.ico  (best on Windows – supports multi-res)
-      2. icon.png  (cross-platform)
-      3. icon.jpg  (project has this)
-      4. Programmatic PIL icon
-      5. No icon (silent fallback)
+      1. pageout.ico  (custom PageOut multi-res icon - best on Windows)
+      2. icon.ico     (backward compatibility)
+      3. icon.png     (cross-platform)
+      4. icon.jpg     (project has this)
+      5. Programmatic PIL icon
+      6. No icon (silent fallback)
     """
-    base = resource_path("icon")
-    for ext in (".ico", ".png", ".jpg", ".jpeg"):
-        p = base.with_suffix(ext)
-        if p.exists():
-            try:
-                if ext == ".ico":
-                    root.iconbitmap(str(p))
-                    return
-                else:
-                    from PIL import Image, ImageTk
+    # Try custom PageOut icon first, then fall back to old names
+    for name in ("pageout", "icon"):
+        base = resource_path(name)
+        for ext in (".ico", ".png", ".jpg", ".jpeg"):
+            p = base.with_suffix(ext)
+            if p.exists():
+                try:
+                    if ext == ".ico":
+                        root.iconbitmap(str(p))
+                        return
+                    else:
+                        from PIL import Image, ImageTk
 
-                    img = Image.open(str(p)).resize((64, 64), Image.LANCZOS)
-                    ph = ImageTk.PhotoImage(img)
-                    root.iconphoto(True, ph)
-                    root._icon_ref = ph  # keep reference
-                    return
-            except Exception:
-                continue
+                        img = Image.open(str(p)).resize((64, 64), Image.LANCZOS)
+                        ph = ImageTk.PhotoImage(img)
+                        root.iconphoto(True, ph)
+                        root._icon_ref = ph  # keep reference
+                        return
+                except Exception:
+                    continue
     # Programmatic fallback
     ph = _make_programmatic_icon()
     if ph:
@@ -265,7 +281,7 @@ class App:
                     self.set_running(False)
                     text = f"Exported {count - skipped} page(s)."
                     if skipped:
-                        text += f"\n{skipped} unchanged page(s) skipped (tick “Force full re-export” to redo them)."
+                        text += f'\n{skipped} unchanged page(s) skipped (tick "Force full re-export" to redo them).'
                     if timing_summary:
                         text += f"\n\nTiming: {timing_summary}"
                     text += f"\n\n{out}"
@@ -595,7 +611,7 @@ class App:
         def choose():
             FontPicker(self, self.V[key].get(), allow_same, lambda n: self.V[key].set(n))
 
-        ttk.Button(fr, text="Choose font…", command=choose).pack(side="left", padx=(6, 0))
+        ttk.Button(fr, text="Choose font...", command=choose).pack(side="left", padx=(6, 0))
         self.V[key].trace_add("write", refresh)
         refresh()
         self.field(g, label, fr, hint)
@@ -660,13 +676,17 @@ class App:
         # Add a button to open the manage dialog
         from pageout.gui.presenter import Presenter
         # We'll need a reference to the presenter - use a lambda that calls a method on the presenter
-        ttk.Button(combo_frame, text="Manage…", command=lambda: self.presenter.manage_sources() if self.presenter else None).pack(side="left", padx=4)
+        ttk.Button(combo_frame, text="Manage...", command=lambda: self.presenter.manage_sources() if self.presenter else None).pack(side="left", padx=4)
 
         return combo_frame
 
     # ---- layout ----
     def build(self):
-        """Build the UI using the new shell architecture (U2: Look & Navigation)."""
+        """Build the UI using the new shell architecture (U2: Look & Navigation).
+
+        The shell handles sidebar navigation and page frames.
+        This method sets up styles, mouse wheel, summary bar, and bottom bar (run/progress/log).
+        """
         V = self.V
         style = ttk.Style()
         try:
@@ -704,395 +724,7 @@ class App:
         V["save_dir"].trace_add("write", self.update_summary)
         self.update_summary()
 
-        # ═══════════════ 1 · Source ═══════════════
-        t = self.page("1  Source")
-        g = self.group(t, "Notion connection")
-        self.token_entry = ttk.Entry(g, textvariable=V["token"], show="•")
-        self.field(
-            g,
-            "Integration token",
-            self.token_entry,
-            "Create one at notion.so/my-integrations, then in Notion open your page → ••• → "
-            "Connections → add your integration.",
-        )
-        self.show_token = tk.BooleanVar(value=False)
-        o = ttk.Frame(g)
-        ttk.Checkbutton(
-            o,
-            text="Show token",
-            variable=self.show_token,
-            command=lambda: self.token_entry.config(show="" if self.show_token.get() else "•"),
-        ).pack(side="left")
-        ttk.Checkbutton(o, text="Remember on this PC (OS keyring)", variable=V["remember_token"]).pack(
-            side="left", padx=14
-        )
-        ttk.Button(
-            o, text="Open integrations page ↗", command=lambda: webbrowser.open("https://www.notion.so/my-integrations")
-        ).pack(side="left")
-        self.field(g, "", o)
-        self.tick(
-            g,
-            "allow_plaintext_secrets",
-            "Allow plain-text storage if no OS keyring is available",
-            "Keyring found: yes — secrets are stored in the OS credential store."
-            if keyring_available()
-            else "No OS keyring found (pip install keyring). Without it the token is not remembered "
-            "unless you tick the box above.",
-        )
-
-        g = self.group(t, "What to export")
-        self.field(
-            g,
-            "Database / page link",
-            ttk.Entry(g, textvariable=V["database"]),
-            "Paste the Notion link (or ID). To export several, separate links with spaces or commas.",
-        )
-        self.field(
-            g,
-            "It is a…",
-            self.combo(g, "source_type", SOURCE_TYPES, width=18),
-            "Leave on Auto-detect unless the app guesses wrong.",
-        )
-
-        g = self.group(t, "Private pages — Browser PDF engine only")
-        self.tick(
-            g,
-            "use_login",
-            "Use my saved Notion login",
-            "Only needed when the PDF engine is set to “Browser”. The default API engine does not need this.",
-        )
-        self.login_btn = ttk.Button(g, text="Log in to Notion…", command=self.do_login)
-        self.field(g, "", self.login_btn, "A browser window opens: sign in, then close the window.")
-
-        # ═══════════════ 2 · Pages ═══════════════
-        t = self.page("2  Pages")
-        g = self.group(t, "Choose which pages")
-        pr = ttk.Frame(g)
-        ttk.Button(pr, text="Load pages", command=self.load_pages).pack(side="left")
-        ttk.Button(pr, text="Select all", command=lambda: self.select_pages(True)).pack(side="left", padx=6)
-        ttk.Button(pr, text="Clear", command=lambda: self.select_pages(False)).pack(side="left")
-        self.field(
-            g,
-            "Page list",
-            pr,
-            "Optional. If you never press “Load pages”, every page is exported. "
-            "After loading, only ticked pages are exported.",
-        )
-        self.pages_list = CheckList(g, height=210, empty_text="Press “Load pages” to see your pages here.")
-        self.field(g, "", self.pages_list)
-        self.field(g, "", ttk.Label(g, textvariable=self.pages_list.info, style="Hint.TLabel"))
-
-        g = self.group(t, "Order & filter")
-        sr = ttk.Frame(g)
-        self.sort_combo = ttk.Combobox(sr, textvariable=V["sort_by"], values=SORT_BUILTIN, width=22)
-        self.sort_combo.pack(side="left")
-        ttk.Checkbutton(sr, text="Descending", variable=V["sort_desc"]).pack(side="left", padx=10)
-        self.field(g, "Sort by", sr)
-        fr = ttk.Frame(g)
-        self.filter_combo = ttk.Combobox(fr, textvariable=V["filter_prop"], width=16)
-        self.filter_combo.pack(side="left")
-        ttk.Combobox(
-            fr,
-            textvariable=V["filter_op"],
-            values=["contains", "does not contain", "equals"],
-            state="readonly",
-            width=15,
-        ).pack(side="left", padx=4)
-        ttk.Entry(fr, textvariable=V["filter_value"], width=18).pack(side="left")
-        self.field(g, "Only pages where", fr, "Leave empty for no filter.")
-        self.field(g, "Max pages", self.spin(g, "max_pages", 0, 100000), "0 = no limit.")
-
-        g = self.group(t, "File names")
-        self.field(g, "Name format", ttk.Entry(g, textvariable=V["name_format"]))
-        pre = ttk.Combobox(g, values=NAME_PRESETS, state="readonly")
-        pre.bind("<<ComboboxSelected>>", lambda e: V["name_format"].set(pre.get()))
-        self.field(g, "Examples", pre)
-        self.hint = tk.StringVar(
-            value="Placeholders: {title} {date} {index} {created} {edited} {parent}\n"
-            "Click “Load properties” (tab 4) to list your own.\n"
-            "Formats: {date:%d-%m-%Y}   {title:40} (truncate)"
-        )
-        self.note(g, "", self.hint)
-        self.field(g, "", ttk.Button(g, text="Preview names", command=self.preview_names))
-
-        # ═══════════════ 3 · Formats ═══════════════
-        t = self.page("3  Formats")
-        g = self.group(t, "Export as (tick one or more)")
-        ff = ttk.Frame(g)
-        for n, k in enumerate(FORMATS + ["images"]):
-            ttk.Checkbutton(ff, text=FORMAT_LABELS[k], variable=V["fmt_" + k]).grid(
-                row=n // 4, column=n % 4, sticky="w", padx=(0, 22), pady=3
-            )
-        self.field(g, "Formats", ff)
-        g = self.group(t, "PDF engine")
-        self.field(
-            g,
-            "Engine",
-            self.combo(g, "engine", ENGINES),
-            "API = fast, no login, uses your Design tab settings (fonts, colors…).\n"
-            "Browser = prints the real Notion page (slower; needs login for private pages; "
-            "ignores Design settings).",
-        )
-        g = self.group(t, "Sub-pages")
-        self.field(
-            g,
-            "Sub-pages",
-            self.combo(g, "sub_mode", SUB_MODES),
-            "Skip, put inside the parent page, or export each as its own file.",
-        )
-        self.field(g, "Depth", self.spin(g, "sub_depth", 1, 10), "How many levels of sub-pages to follow.")
-        self.tick(g, "sub_dbs", "Also export rows of databases inside pages (separate files mode)")
-        g = self.group(t, "Combined file")
-        self.tick(g, "combine", "Also create one combined HTML / Markdown / LaTeX file")
-        g = self.group(t, "Markdown & databases")
-        self.field(
-            g,
-            "Markdown flavour",
-            self.combo(g, "md_preset", MD_PRESETS, width=18),
-            "GFM = tables, task lists, <details>.  Vanilla = no raw HTML.  Obsidian = [[wikilinks]], callouts, tags.",
-        )
-        self.field(
-            g,
-            "Database extras",
-            self.combo(g, "db_export", DB_EXPORT_MODES, width=22),
-            "Index page / table of properties (links to every exported file) or a CSV of all properties.",
-        )
-
-        # ═══════════════ 4 · Design ═══════════════
-        t = self.page("4  Design")
-        g = self.group(t, "Quick style")
-        pc = ttk.Combobox(g, textvariable=V["theme_preset"], values=list(STYLE_PRESETS), state="readonly")
-        pc.bind("<<ComboboxSelected>>", self.apply_preset)
-        self.field(
-            g,
-            "Style preset",
-            pc,
-            "Picks fonts, spacing and colors in one click. You can still change every setting below.",
-        )
-
-        g = self.group(t, "Fonts")
-        self.font_field(
-            g,
-            "Body font",
-            "font_family",
-            False,
-            "Press “Choose font…” to see every font in its own style. Arabic: Cairo, Tajawal, Amiri…",
-        )
-        self.font_field(g, "Heading font", "heading_font", True)
-        self.tick(
-            g,
-            "web_fonts",
-            "Download fonts from Google Fonts when needed (internet required)",
-            "Fonts such as Inter, Lora, Playfair Display or Cairo are not on most PCs. Tick this to use them.",
-        )
-        self.field(g, "Font size (px)", self.spin(g, "base_font_size", 10, 28))
-        self.field(g, "Line spacing", self.spin(g, "line_spacing", 1.0, 3.0, 0.1))
-        self.field(g, "Text alignment", self.combo(g, "text_align", TEXT_ALIGNS, width=14))
-        self.field(g, "Title alignment", self.combo(g, "heading_align", HEAD_ALIGNS, width=14))
-
-        g = self.group(t, "Color")
-        cr = ttk.Frame(g)
-        ttk.Entry(cr, textvariable=V["accent_color"], width=10).pack(side="left")
-        self.swatch = tk.Label(cr, width=4, relief="solid", borderwidth=1)
-        self.swatch.pack(side="left", padx=6)
-        ttk.Button(cr, text="Choose…", command=self.pick_color).pack(side="left")
-        V["accent_color"].trace_add("write", self.update_swatch)
-        self.update_swatch()
-        self.field(g, "Accent color", cr, "Used for headings, links, quote bars and the title line.")
-
-        g = self.group(t, "Title area")
-        self.tick(g, "title_separator", "Show a colored line under the page title")
-        self.field(g, "Page icon", self.combo(g, "icon_mode", ICON_MODES, width=22))
-        icon_row = ttk.Frame(g)
-        ttk.Entry(icon_row, textvariable=V["icon_custom_file"]).pack(side="left", fill="x", expand=True)
-        ttk.Button(icon_row, text="Browse…", command=self.choose_icon_file).pack(side="left", padx=4)
-        self.field(g, "Custom icon file", icon_row, "Used only when “Custom icon file” is selected above.")
-        self.tick(g, "cover_page", "Cover page: title, icon and properties alone on page 1")
-
-        g = self.group(t, "Properties (database fields)")
-        self.field(
-            g,
-            "Layout",
-            self.combo(g, "prop_layout", PROP_LAYOUTS, width=22),
-            "Notion Table · Inline Pills · Minimalist List · Hidden",
-        )
-        self.field(
-            g,
-            "Date format",
-            self.combo(g, "date_format_props", DATE_PRESETS, state="normal", width=22),
-            "Or type any pattern, e.g. %d.%m.%Y",
-        )
-        self.field(
-            g,
-            "",
-            ttk.Button(g, text="Load properties", command=self.load_props),
-            "Load the list, then keep selected only the properties you want shown.",
-        )
-        self.props_list = CheckList(
-            g, height=150, empty_text="Press “Load properties” first (all are shown until then)."
-        )
-        self.field(g, "Show these", self.props_list, "Untick the properties you do not want in the export.")
-        pb = ttk.Frame(g)
-        ttk.Button(pb, text="Tick all", command=lambda: self.props_list.select_all(True)).pack(side="left")
-        ttk.Button(pb, text="Untick all", command=lambda: self.props_list.select_all(False)).pack(side="left", padx=6)
-        ttk.Label(pb, textvariable=self.props_list.info, style="Hint.TLabel").pack(side="left", padx=8)
-        self.field(g, "", pb)
-
-        g = self.group(t, "Content")
-        self.tick(g, "render_math", "Render math equations nicely (KaTeX)")
-        self.field(
-            g,
-            "Math engine",
-            self.combo(g, "math_engine", MATH_ENGINES, width=22),
-            "Bundled = works offline (adds ~600 KB to each HTML file). CDN = needs internet. None = plain LaTeX text.",
-        )
-        self.tick(
-            g,
-            "rewrite_links",
-            "Rewrite links between exported pages to local files",
-            "Links to pages that are exported too become relative links that work offline (HTML and Markdown).",
-        )
-        self.tick(g, "expand_toggles", "Expand all toggle blocks")
-        self.field(g, "Links", self.combo(g, "links", LINK_MODES))
-        self.tick(g, "light_theme", "Force light theme  (Browser engine only)")
-        self.tick(g, "clean_layout", "Hide Notion sidebar / top bar  (Browser engine only)")
-        self.css_text = tk.Text(g, height=5, width=50)
-        self.css_text.insert("1.0", self.cfg0.get("custom_css", ""))
-        self.field(g, "Custom CSS", self.css_text, "For experts. Example: h1 { color: #c00; }")
-
-        # ═══════════════ 5 · Images ═══════════════
-        t = self.page("5  Images")
-        g = self.group(t, "Images inside documents")
-        self.field(
-            g,
-            "Handling",
-            self.combo(g, "img_handling", IMG_MODES),
-            "Notion image links expire after about an hour, so “Embed” or “Save locally” is safest.",
-        )
-        self.tick(g, "optimize_images", "Shrink big photos for PDF / Word (faster export, smaller files)")
-        self.field(
-            g,
-            "Max image size (px)",
-            self.spin(g, "image_max_px", 600, 4000, 100, 8),
-            "Saved image files are never changed — only the copy inside the PDF / Word file.",
-        )
-        g = self.group(t, "Image layout (PDF / HTML / Word)")
-        self.tick(g, "maximize_images", "Maximize images (full page width)")
-        self.tick(g, "one_image_per_page", "One image per page")
-        self.tick(g, "show_image_names", "Show image file names under images (when Notion has no caption)")
-        cf = ttk.Frame(g)
-        ttk.Combobox(cf, textvariable=V["caption_format"], values=CAPTION_FMTS, width=28).pack(side="left")
-        self.field(g, "Caption format", cf, "Placeholders: {name} {ext} {n} {original} {caption}")
-        g = self.group(t, "Saving image files  (tick “Images” in tab 3)")
-        self.field(
-            g,
-            "File name format",
-            ttk.Entry(g, textvariable=V["img_format"]),
-            "Placeholders: {page} {title} {n} {caption} {original} {date} {index} {parent}",
-        )
-        ip = ttk.Combobox(g, values=IMG_PRESETS, state="readonly")
-        ip.bind("<<ComboboxSelected>>", lambda e: V["img_format"].set(ip.get()))
-        self.field(g, "Examples", ip)
-        self.tick(g, "img_subfolder", "Put each page's images in its own folder")
-        self.tick(g, "img_cover", "Include page cover images ({n} = cover)")
-
-        # ═══════════════ 6 · PDF ═══════════════
-        t = self.page("6  PDF")
-        g = self.group(t, "Page")
-        self.field(g, "Page size", self.combo(g, "page_size", PAGE_SIZES, width=14))
-        self.field(g, "Orientation", self.combo(g, "orientation", ["Portrait", "Landscape"], width=14))
-        self.field(
-            g, "Margin (mm)", self.spin(g, "margin_mm", 0, 50), "20 mm is comfortable for A4. Use 10 for denser pages."
-        )
-        self.field(g, "Scale (%)", self.spin(g, "scale", 10, 200))
-        self.tick(g, "print_background", "Print background colors")
-        self.tick(
-            g,
-            "remove_blank_pages",
-            "Automatically remove empty pages",
-            "Deletes pages that contain no text, image or drawing (for example after a page break).",
-        )
-        g = self.group(t, "Page numbers")
-        self.tick(g, "page_numbers", "Add page numbers")
-        self.field(g, "Position", self.combo(g, "page_num_position", PAGENUM_POS, width=18))
-        self.field(g, "Format", self.combo(g, "page_num_format", PAGENUM_FMT, width=18))
-
-        # ═══════════════ 7 · LaTeX & AI ═══════════════
-        t = self.page("7  LaTeX & AI")
-        g = self.group(t, "LaTeX (.tex)")
-        self.tick(g, "fmt_tex", "Export as LaTeX (.tex) document", "Compile with pdflatex (xelatex for Arabic).")
-        self.field(
-            g,
-            "Images in .tex",
-            self.combo(g, "latex_images", LATEX_IMG_MODES, width=20),
-            "Include = images are saved next to the .tex (webp/gif are converted to PNG).",
-        )
-        cb = ttk.Frame(g)
-        ttk.Button(cb, text="📋 Copy last exported LaTeX", command=self.copy_latex).pack(side="left")
-        self.field(g, "Clipboard", cb)
-        g = self.group(t, "Gemini Math OCR — whiteboard photos → LaTeX")
-        self.note(
-            g,
-            "Each user enters their own key. It is stored in the OS keyring "
-            "(or in ~/.notion_pdf_exporter/config.json only if you allowed plain text).",
-        )
-        kf = ttk.Frame(g)
-        self.gemini_key_entry = ttk.Entry(kf, textvariable=V["gemini_api_key"], show="•")
-        self.gemini_key_entry.pack(side="left", fill="x", expand=True)
-        self.show_gemini_key = tk.BooleanVar(value=False)
-        ttk.Checkbutton(
-            kf,
-            text="Show",
-            variable=self.show_gemini_key,
-            command=lambda: self.gemini_key_entry.config(show="" if self.show_gemini_key.get() else "•"),
-        ).pack(side="left", padx=6)
-        ttk.Button(kf, text="Save", command=self.save_gemini_key).pack(side="left")
-        ttk.Button(kf, text="Get free key ↗", command=lambda: webbrowser.open("https://aistudio.google.com/")).pack(
-            side="left", padx=6
-        )
-        self.field(g, "Gemini API key", kf)
-        self.tick(g, "gemini_math_ocr", "Scan images with Gemini Math OCR")
-        self.field(
-            g,
-            "Model",
-            self.combo(g, "gemini_model", GEMINI_MODELS, state="normal"),
-            "You can type any Gemini model name here.",
-        )
-        self.tick(g, "keep_whiteboard_image", "Keep a note of the original image below the transcription")
-
-        # ═══════════════ 8 · Output ═══════════════
-        t = self.page("8  Output")
-        g = self.group(t, "Where to save")
-        orow = ttk.Frame(g)
-        ttk.Entry(orow, textvariable=V["save_dir"]).pack(side="left", fill="x", expand=True)
-        ttk.Button(orow, text="Browse…", command=self.choose_folder).pack(side="left", padx=4)
-        self.field(g, "Output folder  (required)", orow)
-        g = self.group(t, "PDF files")
-        self.field(g, "PDF output", self.combo(g, "output_mode", OUTPUT_MODES))
-        self.field(g, "Merged file name", ttk.Entry(g, textvariable=V["merged_name"]))
-        self.tick(g, "bookmarks", "Add bookmarks to the merged PDF")
-        g = self.group(t, "Speed & reliability")
-        self.field(
-            g,
-            "Parallel downloads",
-            self.spin(g, "workers", 1, 8),
-            "Pages and images are fetched in the background while the previous page is rendered. "
-            "Notion limits requests (~3 per second), so more than 4 rarely helps.",
-        )
-        self.tick(
-            g,
-            "incremental",
-            "Incremental sync: skip pages that did not change since the last export",
-            "Uses Notion's last-edited time and your settings. Off automatically for combined files, "
-            "inline sub-pages and raw image export.",
-        )
-        self.tick(g, "force", "Force full re-export (ignore the incremental cache)")
-        self.tick(g, "skip_existing", "Skip files already exported (resume an interrupted export)")
-        self.field(g, "Retries on failure", self.spin(g, "retries", 0, 5))
-        self.field(g, "Extra wait per page (s)", self.spin(g, "extra_wait", 0, 60, 0.5), "Browser engine only.")
-        self.tick(g, "profile_timing", "Save timing_report.json with export profiling data")
-
-        # ---- bottom bar ----
+        # ---- bottom bar (run buttons, progress, log) ----
         run = ttk.Frame(self.root)
         self.export_btn = ttk.Button(run, text="▶  Export", style="Accent.TButton", command=self.start_export)
         self.export_btn.pack(side="left")
@@ -1127,7 +759,7 @@ class App:
         self.bar.pack(side="bottom", fill="x", padx=12, pady=2)
         run.pack(side="bottom", fill="x", padx=12, pady=4)
         sumlab.pack(side="bottom", fill="x", padx=14)
-        self.nb.pack(side="top", fill="both", expand=True, padx=10, pady=(8, 4))
+        # Note: shell handles the sidebar + content area; no notebook (self.nb) needed
         for k in FORMATS + ["images"]:
             V["fmt_" + k].trace_add("write", self.update_summary)
         V["save_dir"].trace_add("write", self.update_summary)
@@ -1247,7 +879,7 @@ class App:
         self.field(g, _("examples"), pre)
         self.hint = tk.StringVar(
             value="Placeholders: {title} {date} {index} {created} {edited} {parent}\n"
-            "Click “Load properties” (tab 4) to list your own.\n"
+            'Click "Load properties" (tab 4) to list your own.\n'
             "Formats: {date:%d-%m-%Y}   {title:40} (truncate)"
         )
         self.note(g, "", self.hint)
@@ -1314,7 +946,7 @@ class App:
             _("body_font"),
             "font_family",
             False,
-            "Press “Choose font…” to see every font in its own style. Arabic: Cairo, Tajawal, Amiri…",
+            'Press "Choose font..." to see every font in its own style. Arabic: Cairo, Tajawal, Amiri...',
         )
         self.font_field(g, _("heading_font"), "heading_font", True)
         self.tick(
@@ -1344,7 +976,7 @@ class App:
         icon_row = ttk.Frame(g)
         ttk.Entry(icon_row, textvariable=V["icon_custom_file"]).pack(side="left", fill="x", expand=True)
         ttk.Button(icon_row, text=_("choose"), command=self.choose_icon_file).pack(side="left", padx=4)
-        self.field(g, _("custom_icon"), icon_row, "Used only when “Custom icon file” is selected above.")
+        self.field(g, _("custom_icon"), icon_row, 'Used only when "Custom icon file" is selected above.')
         self.tick(g, "cover_page", _("cover_page"))
 
         g = self.group(parent, _("properties"))
@@ -1363,11 +995,11 @@ class App:
         self.field(
             g,
             "",
-            ttk.Button(g, text=_("load_properties"), command=self.load_properties),
+            ttk.Button(g, text=_("load_properties"), command=self.load_props),
             "Load the list, then keep selected only the properties you want shown.",
         )
         self.props_list = CheckList(
-            g, height=150, empty_text="Press “Load properties” first (all are shown until then)."
+            g, height=150, empty_text='Press "Load properties" first (all are shown until then).'
         )
         self.field(g, _("show_these"), self.props_list, "Untick the properties you do not want in the export.")
         pb = ttk.Frame(g)
@@ -1406,7 +1038,7 @@ class App:
             g,
             _("handling"),
             self.combo(g, "img_handling", IMG_MODES),
-            "Notion image links expire after about an hour, so “Embed” or “Save locally” is safest.",
+            'Notion image links expire after about an hour, so "Embed" or "Save locally" is safest.',
         )
         self.tick(g, "optimize_images", _("optimize"))
         self.field(

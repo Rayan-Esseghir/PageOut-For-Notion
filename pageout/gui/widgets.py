@@ -263,16 +263,17 @@ class Frame(ttk.Frame):
 class SidebarNav(ttk.Frame):
     """Sidebar navigation widget replacing horizontal tabs."""
 
-    def __init__(self, parent, items: List[Tuple[str, str]], command: Callable, **kwargs):
+    def __init__(self, parent, items: List[Tuple[str, str]], command: Callable = None, on_select: Callable = None, **kwargs):
         """
         Args:
             parent: Parent widget
             items: List of (key, label) tuples
-            command: Callback function(key) when item is selected
+            command: Callback function(key) when item is selected (alias for on_select)
+            on_select: Callback function(key) when item is selected (alias for command)
         """
         super().__init__(parent, **kwargs)
         self.items = items
-        self.command = command
+        self.command = command or on_select
         self.current_key = None
         self.buttons = {}
         self._build()
@@ -324,18 +325,28 @@ class SidebarNav(ttk.Frame):
         if key in self.buttons:
             self._on_select(key)
 
+    def set_active(self, key: str):
+        """Alias for select() for compatibility."""
+        self.select(key)
+
     def get_selection(self) -> Optional[str]:
         """Get currently selected key."""
         return self.current_key
 
 
 class ThemeSelector(ttk.Frame):
-    """Theme selector widget (Light/Dark/System) with variable binding."""
+    """Theme selector widget (Light/Dark/System) supporting either theme_manager or variable."""
 
-    def __init__(self, parent, variable: tk.Variable, on_change: Optional[Callable] = None, **kwargs):
+    def __init__(self, parent, theme_manager=None, variable: Optional[tk.Variable] = None, command: Optional[Callable] = None, on_change: Optional[Callable] = None, **kwargs):
         super().__init__(parent, **kwargs)
-        self.variable = variable
-        self.on_change = on_change
+        self.theme_manager = theme_manager
+        self.on_change = command or on_change
+        if variable is not None:
+            self.variable = variable
+        elif theme_manager is not None and hasattr(theme_manager, "current_theme"):
+            self.variable = tk.StringVar(value=theme_manager.current_theme)
+        else:
+            self.variable = tk.StringVar(value="light")
         self._build()
 
     def _build(self):
@@ -350,17 +361,26 @@ class ThemeSelector(ttk.Frame):
             ).pack(side="left", padx=4)
 
     def _on_change(self):
+        val = self.variable.get()
+        if self.theme_manager and hasattr(self.theme_manager, "apply_theme"):
+            self.theme_manager.apply_theme(val)
         if self.on_change:
-            self.on_change(self.variable.get())
+            self.on_change(val)
 
 
 class UIScaleSelector(ttk.Frame):
-    """UI Scale selector widget with variable binding."""
+    """UI Scale selector widget supporting either theme_manager or variable."""
 
-    def __init__(self, parent, variable: tk.Variable, on_change: Optional[Callable] = None, **kwargs):
+    def __init__(self, parent, theme_manager=None, variable: Optional[tk.Variable] = None, command: Optional[Callable] = None, on_change: Optional[Callable] = None, **kwargs):
         super().__init__(parent, **kwargs)
-        self.variable = variable
-        self.on_change = on_change
+        self.theme_manager = theme_manager
+        self.on_change = command or on_change
+        if variable is not None:
+            self.variable = variable
+        elif theme_manager is not None and hasattr(theme_manager, "ui_scale"):
+            self.variable = tk.DoubleVar(value=theme_manager.ui_scale)
+        else:
+            self.variable = tk.DoubleVar(value=1.0)
         self._build()
 
     def _build(self):
@@ -381,6 +401,8 @@ class UIScaleSelector(ttk.Frame):
     def _on_scale_change(self, value):
         scale_val = float(value)
         self.value_label.config(text=f"{scale_val:.1f}x")
+        if self.theme_manager and hasattr(self.theme_manager, "set_ui_scale"):
+            self.theme_manager.set_ui_scale(scale_val)
         if self.on_change:
             self.on_change(scale_val)
 
@@ -414,67 +436,6 @@ class ModeToggle(ttk.Frame):
     def _on_change(self):
         if self.on_change:
             self.on_change(self.variable.get())
-
-
-class ThemeSelector(ttk.Frame):
-    """Theme selector widget (Light/Dark/System)."""
-
-    def __init__(self, parent, theme_manager, on_change: Optional[Callable] = None, **kwargs):
-        super().__init__(parent, **kwargs)
-        self.theme_manager = theme_manager
-        self.on_change = on_change
-        self.variable = tk.StringVar(value=theme_manager.current_theme)
-        self._build()
-
-    def _build(self):
-        ttk.Label(self, text=_("theme_label")).pack(side="left", padx=(0, 8))
-        for value, label in [("light", _("theme_light")), ("dark", _("theme_dark")), ("system", _("theme_system"))]:
-            ttk.Radiobutton(
-                self,
-                text=label,
-                variable=self.variable,
-                value=value,
-                command=self._on_change,
-            ).pack(side="left", padx=4)
-
-    def _on_change(self):
-        theme = self.variable.get()
-        self.theme_manager.apply_theme(theme)
-        if self.on_change:
-            self.on_change(theme)
-
-
-class UIScaleSelector(ttk.Frame):
-    """UI Scale selector widget."""
-
-    def __init__(self, parent, theme_manager, on_change: Optional[Callable] = None, **kwargs):
-        super().__init__(parent, **kwargs)
-        self.theme_manager = theme_manager
-        self.on_change = on_change
-        self.variable = tk.DoubleVar(value=theme_manager.ui_scale)
-        self._build()
-
-    def _build(self):
-        ttk.Label(self, text=_("ui_scale")).pack(side="left", padx=(0, 8))
-        scale = ttk.Scale(
-            self,
-            from_=0.8,
-            to=1.5,
-            variable=self.variable,
-            orient="horizontal",
-            length=120,
-            command=self._on_scale_change,
-        )
-        scale.pack(side="left", padx=4)
-        self.value_label = ttk.Label(self, text=f"{self.variable.get():.1f}x")
-        self.value_label.pack(side="left", padx=4)
-
-    def _on_scale_change(self, value):
-        scale_val = float(value)
-        self.value_label.config(text=f"{scale_val:.1f}x")
-        self.theme_manager.set_ui_scale(scale_val)
-        if self.on_change:
-            self.on_change(scale_val)
 
 
 class ToolTip:
