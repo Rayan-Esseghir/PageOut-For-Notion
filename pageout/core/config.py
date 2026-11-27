@@ -386,6 +386,9 @@ DEFAULTS = {
     "prefs_remember_window": True,
     "prefs_confirm_exit": False,
     "prefs_tooltip_delay": 500,
+    # Phase 8: Font preferences
+    "font_favorites": '["Inter", "Roboto", "Segoe UI", "Arial", "Source Sans 3"]',
+    "font_recent": "[]",
 }
 
 

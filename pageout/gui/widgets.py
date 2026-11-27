@@ -4,7 +4,7 @@ Contains reusable widget components used across multiple tabs.
 """
 
 import tkinter as tk
-from tkinter import ttk
+from tkinter import colorchooser, ttk
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 # Import constants from config for font handling
@@ -97,19 +97,52 @@ _GENERIC_FONT_ALIAS = {"Sans-serif": "Helvetica", "Serif": "Times", "Monospace":
 
 
 class FontPicker(tk.Toplevel):
-    """Font chooser where every font name is shown in its own typeface."""
+    """Font chooser where every font name is shown in its own typeface.
+
+    Features:
+    - Favorites (⭐) and Recently Used sections
+    - Search filtering
+    - Live preview with Arabic sample text
+    - Shows installed status (grey = not installed)
+    """
 
     SAMPLE = "The quick brown fox 0123456789  —  مرحبا بالعالم"
+    PREVIEW_TEXT_AR = "مرحبا بالعالم"
 
-    def __init__(self, app, current, allow_same, on_pick):
+    def __init__(self, app, current, allow_same, on_pick, favorites: Optional[List[str]] = None,
+                 recent: Optional[List[str]] = None):
+        """
+        Args:
+            app: Reference to the main App
+            current: Currently selected font name
+            allow_same: Whether to show "Same as body" option
+            on_pick: Callback when font is selected
+            favorites: List of favorite font names
+            recent: List of recently used font names
+        """
         super().__init__(app.root)
         self.app, self.on_pick, self.current = app, on_pick, current
-        self.title("Choose a font")
-        self.geometry("500x600")
+        self.favorites = favorites or []
+        self.recent = recent or []
+        self.allow_same = allow_same
+        self.title(_("choose_font"))
+        self.geometry("550x650")
         self.transient(app.root)
         self.entries = []  # (name or None, display)
+
+        # Build sections
+        self.sections = []
         names = ([SAME_AS_BODY] if allow_same else []) + ["Sans-serif", "Serif", "Monospace"]
-        self.sections = [("Generic", names)]
+        self.sections.append(("Generic", names))
+
+        # Favorites section
+        if self.favorites:
+            self.sections.append((_("font_favorites"), self.favorites))
+
+        # Recently used section
+        if self.recent:
+            self.sections.append((_("font_recent"), self.recent))
+
         cat = [n for n, _, _ in FONT_CATALOG]
         self.sections.append(
             ("Recommended  (grey = not installed on this PC; Google Fonts need the option in the Design tab)", cat)
@@ -117,14 +150,25 @@ class FontPicker(tk.Toplevel):
         self.sections.append(
             ("Installed on this PC", [f for f in app.font_values if f not in cat and f not in _GENERIC_FONT_ALIAS])
         )
+
+        self._build_ui()
+        self.chosen = current
+        self.fill()
+        self.grab_set()
+
+    def _build_ui(self):
+        """Build the FontPicker UI."""
+        # Search bar
         top = ttk.Frame(self)
         top.pack(fill="x", padx=10, pady=(10, 4))
-        ttk.Label(top, text="Search:").pack(side="left")
+        ttk.Label(top, text=_("font_search")).pack(side="left")
         self.q = tk.StringVar()
         ent = ttk.Entry(top, textvariable=self.q)
         ent.pack(side="left", fill="x", expand=True, padx=6)
         ent.focus_set()
         self.q.trace_add("write", lambda *_: self.fill())
+
+        # Font list
         mid = ttk.Frame(self)
         mid.pack(fill="both", expand=True, padx=10, pady=4)
         self.txt = tk.Text(
@@ -137,19 +181,50 @@ class FontPicker(tk.Toplevel):
         self.txt.tag_configure("head", font=("", 9, "bold"), foreground="#6b7280", spacing1=8)
         self.txt.tag_configure("pick", background="#cfe3ff")
         self.txt.tag_configure("web", foreground="#8a8f98")
+        self.txt.tag_configure("fav", foreground="#d97706")
         self.txt.bind("<Button-1>", self.on_click)
         self.txt.bind("<Double-Button-1>", lambda e: (self.on_click(e), self.use()))
+
+        # Preview area
+        preview_frame = ttk.Frame(self)
+        preview_frame.pack(fill="x", padx=10, pady=4)
+        ttk.Label(preview_frame, text=_("font_preview"), font=("", 9, "bold")).pack(anchor="w")
+
+        # Preview with Latin text
         self.preview = tk.Label(
-            self, text=self.SAMPLE, bg="white", relief="solid", borderwidth=1, height=2, wraplength=470
+            preview_frame, text=self.SAMPLE, bg="white", relief="solid", borderwidth=1, height=2, wraplength=520
         )
-        self.preview.pack(fill="x", padx=10, pady=4)
+        self.preview.pack(fill="x", pady=2)
+
+        # Preview with Arabic text
+        self.preview_ar = tk.Label(
+            preview_frame, text=self.PREVIEW_TEXT_AR, bg="white", relief="solid", borderwidth=1, height=1,
+            font=("", 16), fg="#6b7280"
+        )
+        self.preview_ar.pack(fill="x", pady=2)
+
+        # Font size preview
+        size_frame = ttk.Frame(preview_frame)
+        size_frame.pack(fill="x", pady=2)
+        ttk.Label(size_frame, text=_("font_size_label")).pack(side="left")
+        self.size_var = tk.IntVar(value=12)
+        size_spin = ttk.Spinbox(size_frame, from_=8, to=72, textvariable=self.size_var, width=5,
+                                command=self._update_preview_size)
+        size_spin.pack(side="left", padx=4)
+        self.size_var.trace_add("write", lambda *_: self._update_preview_size())
+
+        # Buttons
         bt = ttk.Frame(self)
         bt.pack(fill="x", padx=10, pady=(2, 10))
-        ttk.Button(bt, text="Use this font", command=self.use).pack(side="right")
-        ttk.Button(bt, text="Cancel", command=self.destroy).pack(side="right", padx=6)
-        self.chosen = current
-        self.fill()
-        self.grab_set()
+        ttk.Button(bt, text=_("use_this_font"), command=self.use).pack(side="right")
+        ttk.Button(bt, text=_("cancel_font"), command=self.destroy).pack(side="right", padx=6)
+
+    def _update_preview_size(self):
+        """Update preview font size."""
+        fam = self.family_for(self.chosen) if self.chosen else None
+        size = self.size_var.get()
+        self.preview.config(font=(fam, size) if fam else ("", size))
+        self.preview_ar.config(font=(fam, size) if fam else ("", size))
 
     def family_for(self, name):
         fam = _GENERIC_FONT_ALIAS.get(name, name)
@@ -171,12 +246,16 @@ class FontPicker(tk.Toplevel):
                 tag = "f%d" % n
                 n += 1
                 fam = self.family_for(name)
+                tags = [tag]
+                if name in self.favorites:
+                    tags.append("fav")
                 if fam:
                     t.tag_configure(tag, font=(fam, 13))
-                    t.insert("end", "  " + name + "\n", tag)
+                    t.insert("end", "  " + name + "\n", tuple(tags))
                 else:
                     t.tag_configure(tag, font=("", 11))
-                    t.insert("end", "  " + name + "\n", (tag, "web"))
+                    tags.append("web")  # Not installed fonts get grey color
+                    t.insert("end", "  " + name + "\n", tuple(tags))
                 self.lines[int(t.index("end-2l").split(".")[0])] = name
         t.config(state="disabled")
         self.mark()
@@ -188,7 +267,9 @@ class FontPicker(tk.Toplevel):
                 self.txt.tag_add("pick", f"{ln}.0", f"{ln}.end+1c")
                 self.txt.see(f"{ln}.0")
         fam = self.family_for(self.chosen) if self.chosen else None
-        self.preview.config(font=(fam, 15) if fam else ("", 12))
+        size = self.size_var.get()
+        self.preview.config(font=(fam, size) if fam else ("", size))
+        self.preview_ar.config(font=(fam, size) if fam else ("", size))
 
     def on_click(self, e):
         ln = int(self.txt.index(f"@{e.x},{e.y}").split(".")[0])
@@ -199,6 +280,10 @@ class FontPicker(tk.Toplevel):
 
     def use(self):
         if self.chosen:
+            # Update recent fonts (add to front, keep max 10)
+            if self.chosen not in self.recent:
+                self.recent.insert(0, self.chosen)
+                self.recent = self.recent[:10]
             self.on_pick(self.chosen)
         self.destroy()
 
@@ -408,14 +493,49 @@ class UIScaleSelector(ttk.Frame):
 
 
 class ColorPicker(ttk.Frame):
-    """Enhanced color picker widget with color history and favorites."""
+    """Enhanced color picker widget with color history, favorites, and contrast checking."""
 
-    def __init__(self, parent, variable: tk.Variable, on_pick: Optional[Callable] = None, **kwargs):
+    def __init__(self, parent, variable: tk.Variable, on_pick: Optional[Callable] = None,
+                 bg_color: str = "#ffffff", **kwargs):
+        """
+        Args:
+            parent: Parent widget
+            variable: Tkinter variable for the color value
+            on_pick: Callback when color is picked
+            bg_color: Background color for contrast checking (default white)
+        """
         super().__init__(parent, **kwargs)
         self.variable = variable
         self.on_pick = on_pick
+        self.bg_color = bg_color
         self._favorites = ["#37352f", "#2563eb", "#16a34a", "#dc2626", "#d97706", "#7c3aed"]
         self._build()
+
+    @staticmethod
+    def _hex_to_rgb(hex_color: str) -> tuple:
+        """Convert hex color to RGB tuple."""
+        hex_color = hex_color.lstrip('#')
+        return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+
+    @staticmethod
+    def _luminance(rgb: tuple) -> float:
+        """Calculate relative luminance of RGB color."""
+        def channel(c):
+            c = c / 255.0
+            return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+        r, g, b = rgb
+        return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b)
+
+    @classmethod
+    def contrast_ratio(cls, fg_color: str, bg_color: str) -> float:
+        """Calculate contrast ratio between two colors."""
+        fg_rgb = cls._hex_to_rgb(fg_color)
+        bg_rgb = cls._hex_to_rgb(bg_color)
+        fg_lum = cls._luminance(fg_rgb)
+        bg_lum = cls._luminance(bg_rgb)
+        lighter = max(fg_lum, bg_lum)
+        darker = min(fg_lum, bg_lum)
+        return (lighter + 0.05) / (darker + 0.05)
 
     def _build(self):
         """Build the color picker UI."""
@@ -429,26 +549,77 @@ class ColorPicker(ttk.Frame):
 
         # Current value display
         self.value_label = ttk.Label(self, text=self.variable.get(), foreground="#6b7280")
-        self.value_label.pack(side="left")
+        self.value_label.pack(side="left", padx=(8, 0))
+
+        # Contrast indicator
+        self.contrast_label = ttk.Label(self, text="", style="Hint.TLabel")
+        self.contrast_label.pack(side="left", padx=(8, 0))
+
+        # Favorites frame (initially hidden, shown on demand)
+        self.favorites_frame = ttk.Frame(self)
+        self._build_favorites()
 
         self.variable.trace_add("write", self._update_display)
 
+    def _build_favorites(self):
+        """Build the favorites color palette."""
+        ttk.Separator(self, orient="horizontal").pack(fill="x", pady=4)
+        ttk.Label(self, text=_("color_favorites"), style="Hint.TLabel").pack(anchor="w")
+        fav_frame = ttk.Frame(self.favorites_frame)
+        fav_frame.pack(fill="x")
+        for color in self._favorites:
+            btn = tk.Button(
+                fav_frame,
+                text="  ",
+                bg=color,
+                width=2,
+                height=1,
+                relief="solid",
+                borderwidth=1,
+                command=lambda c=color: self._set_color(c)
+            )
+            btn.pack(side="left", padx=2)
+            # Add tooltip with color value
+            ToolTip(btn, color)
+
     def _update_display(self, *_):
-        """Update the color display."""
+        """Update the color display and contrast check."""
         try:
             color = self.variable.get()
             self.color_label.config(bg=color)
             self.value_label.config(text=color, foreground="#6b7280")
+
+            # Check contrast against background
+            ratio = self.contrast_ratio(color, self.bg_color)
+            if ratio >= 4.5:
+                self.contrast_label.config(
+                    text=f"✓ {_('color_contrast_acceptable')} ({ratio:.1f}:1)",
+                    foreground="#16a34a"
+                )
+            elif ratio >= 3.0:
+                self.contrast_label.config(
+                    text=f"⚠ {_('color_contrast_insufficient')} ({ratio:.1f}:1)",
+                    foreground="#d97706"
+                )
+            else:
+                self.contrast_label.config(
+                    text=f"✗ {_('color_contrast_insufficient')} ({ratio:.1f}:1)",
+                    foreground="#dc2626"
+                )
         except Exception:
             pass
 
     def _pick_color(self):
         """Open color chooser dialog."""
-        color = tk.colorchooser.askcolor(self.variable.get(), self.master, _("color_picker_title"))
+        color = colorchooser.askcolor(self.variable.get(), self.master, _("color_picker_title"))
         if color[1]:
-            self.variable.set(color[1])
-            if self.on_pick:
-                self.on_pick(color[1])
+            self._set_color(color[1])
+
+    def _set_color(self, color: str):
+        """Set the color and update UI."""
+        self.variable.set(color)
+        if self.on_pick:
+            self.on_pick(color)
 
 
 class ModeToggle(ttk.Frame):

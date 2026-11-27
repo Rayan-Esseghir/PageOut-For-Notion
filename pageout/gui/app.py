@@ -1,5 +1,6 @@
 """Tkinter GUI (thin layer over core.pipeline)."""
 
+import json
 import os
 import queue
 import subprocess
@@ -174,6 +175,12 @@ class App:
                 self.V[key] = tk.DoubleVar(value=float(val))
             else:
                 self.V[key] = tk.StringVar(value=str(val))
+
+        # Initialize font preferences tracking
+        self._font_favorites = self._load_json_preference("font_favorites", ["Inter", "Roboto", "Segoe UI", "Arial", "Source Sans 3"])
+        self._font_recent = self._load_json_preference("font_recent", [])
+
+        # Initialize font and installed fonts
         try:
             installed = sorted({f for f in tkfont.families(self.root) if not f.startswith("@")})
         except Exception:
@@ -189,6 +196,55 @@ class App:
         self.build()
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
         self.root.after(100, self.poll)
+
+    def _load_json_preference(self, key: str, default) -> list:
+        """Load a JSON-formatted preference from config."""
+        val = self.cfg0.get(key, str(default))
+        try:
+            return json.loads(val) if isinstance(val, str) else val
+        except (json.JSONDecodeError, TypeError):
+            return default
+
+    def _on_font_selected(self, key, font_name):
+        """Handle font selection from FontPicker - update favorites and recent."""
+        # Update the font variable
+        self.V[key].set(font_name)
+
+        # Update favorites (move to front if exists, otherwise add)
+        if font_name in self._font_favorites:
+            self._font_favorites.remove(font_name)
+        self._font_favorites.insert(0, font_name)
+        self._font_favorites = self._font_favorites[:10]  # Keep max 10
+
+        # Update recent (move to front if exists, otherwise add)
+        if font_name in self._font_recent:
+            self._font_recent.remove(font_name)
+        self._font_recent.insert(0, font_name)
+        self._font_recent = self._font_recent[:10]  # Keep max 10
+
+        # Persist to config
+        self._save_font_preferences()
+
+    def _save_font_preferences(self):
+        """Save font favorites and recent to config file."""
+        try:
+            # Load existing config
+            config_path = os.path.expanduser("~/.notion_pdf_exporter/config.json")
+            if os.path.exists(config_path):
+                with open(config_path, "r", encoding="utf-8") as f:
+                    cfg = json.load(f)
+            else:
+                cfg = {}
+
+            # Update font preferences
+            cfg["font_favorites"] = json.dumps(self._font_favorites)
+            cfg["font_recent"] = json.dumps(self._font_recent)
+
+            # Write back
+            with open(config_path, "w", encoding="utf-8") as f:
+                json.dump(cfg, f, indent=2)
+        except Exception:
+            pass  # Silently fail if we can't save font preferences
 
     # ---- helpers ----
     def collect(self):
@@ -599,7 +655,14 @@ class App:
                 pass
 
         def choose():
-            FontPicker(self, self.V[key].get(), allow_same, lambda n: self.V[key].set(n))
+            FontPicker(
+                self,
+                self.V[key].get(),
+                allow_same,
+                lambda n: self._on_font_selected(key, n),
+                favorites=self._font_favorites,
+                recent=self._font_recent
+            )
 
         ttk.Button(fr, text="Choose font...", command=choose).pack(side="left", padx=(6, 0))
         self.V[key].trace_add("write", refresh)
