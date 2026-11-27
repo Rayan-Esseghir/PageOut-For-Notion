@@ -154,17 +154,137 @@ def _pagenum_templates(cfg: dict):
     return "<span></span>", wrapped
 
 
+def _running_header_templates(cfg: dict):
+    """Return (header_template, footer_template) for running headers with page titles."""
+    header_fmt = cfg.get("header_format", "{title}")
+    pos = cfg.get("page_num_position", PAGENUM_POS[0])
+    fmt = cfg.get("page_num_format", PAGENUM_FMT[0])
+
+    # Page number content for footer
+    if fmt == "Page X of Y":
+        page_content = (
+            '<span style="font-size:9px;color:#666">'
+            'Page <span class="pageNumber"></span>'
+            ' of <span class="totalPages"></span></span>'
+        )
+    else:
+        page_content = '<span style="font-size:9px;color:#666"><span class="pageNumber"></span></span>'
+
+    # Format the header format string - replace {title} placeholder with page-title span
+    # Use string formatting to inject the page title element
+    title_placeholder = '<span class="page-title">'
+    formatted_header = header_fmt.replace("{title}", title_placeholder + "</span>")
+
+    # Running header with page title
+    header_content = (
+        '<div style="width:100%;text-align:center;'
+        'font-size:9px;color:#666;vertical-align:middle;'
+        'height:15mm;display:flex;align-items:center;justify-content:center;">'
+        '<span id="page-title" style="max-width:90vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'
+        + f'{formatted_header}'
+        + '</span></div>'
+    )
+
+    # Footer position
+    align = {"Bottom Center": "center", "Bottom Right": "right", "Top Right": "right"}.get(pos, "center")
+    footer_content = f'<div style="width:100%;text-align:{align}">{page_content}</div>'
+
+    # Always return the header content with page title
+    return header_content, footer_content
+
+
+TOC_JS = """() => {
+  const toc = document.createElement('div');
+  toc.id = 'notion-toc';
+  toc.style.cssText = 'position:fixed;bottom:0;left:0;right:0;background:#f7f6f3;border-top:1px solid #e9e9e7;padding:1em 2em;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;font-size:14px;z-index:9999;';
+
+  const items = [];
+  document.querySelectorAll('h1,h2,h3,h4,h5,h6').forEach((h, i) => {
+    const text = h.textContent.trim();
+    if (text.length > 0) {
+      items.push({level: parseInt(h.tagName[1]), text: text, id: h.id || 'toc-' + i});
+      if (!h.id) h.id = h.id || 'toc-' + i;
+    }
+  });
+
+  if (items.length === 0) return;
+
+  let html = '<strong>Table of Contents</strong><br><span style="font-size:13px;color:#555;">(' + items.length + ' sections)</span><br>';
+  items.forEach(item => {
+    const indent = '█'.repeat(item.level - 1);
+    html += '<a href="#' + item.id + '" style="text-decoration:none;color:#2563eb;">' + indent + ' ' + item.text + '</a><br>';
+  });
+  toc.innerHTML = html;
+
+  const target = document.querySelector('.notion-app-inner') || document.body;
+  target.parentNode.insertBefore(toc, target);
+  return items.length;
+}"""
+
+
+WATERMARK_CSS = '''
+body::before {{
+  content: "@@@WATERMARK@@@";
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) rotate(-45deg);
+  font-size: 48px;
+  color: rgba(0,0,0,@@@OPACITY@@@);
+  opacity: 0@@@OPACITY@@@;
+  pointer-events: none;
+  z-index: 9999;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  font-weight: 400;
+}}
+'''
+
+
+PAGE_TITLE_JS = """() => {
+  const titleEl = document.querySelector('h1.notion-title, .notion-title, [data-type="header_1"]');
+  if (titleEl) {
+    const title = titleEl.textContent.trim().substring(0, 100);
+    // Store for potential use in headers
+    window.__pageTitle = title;
+    return title;
+  }
+  return '';
+}"""
+
+
+BOOKLET_CSS = """
+@page {
+  size: A5;
+  margin: 10mm;
+}
+"""
+
+
 def pdf_kwargs(cfg, path):
     m = f"{int(cfg['margin_mm'])}mm"
     margin = {"top": m, "bottom": m, "left": m, "right": m}
+
+    # Handle booklet mode (A5)
+    format_size = cfg["page_size"]
+    landscape = (cfg["orientation"] == "Landscape")
+    if cfg.get("booklet_mode", False):
+        # Booklet mode uses A5 size regardless of selected size
+        format_size = "A5"
+
     kw = dict(
         path=path,
-        format=cfg["page_size"],
-        landscape=(cfg["orientation"] == "Landscape"),
+        format=format_size,
+        landscape=landscape,
         print_background=bool(cfg["print_background"]),
         scale=max(0.1, min(2.0, float(cfg["scale"]) / 100)),
     )
-    if cfg["page_numbers"]:
+
+    # Running header with page title
+    if cfg.get("running_header", False):
+        margin["top"] = f"{max(int(cfg['margin_mm']), 15)}mm"
+        hdr, ftr = _running_header_templates(cfg)
+        kw.update(display_header_footer=True, header_template=hdr, footer_template=ftr)
+    elif cfg.get("page_numbers", False):
         pos = cfg.get("page_num_position", PAGENUM_POS[0])
         if pos == "Top Right":
             margin["top"] = f"{max(int(cfg['margin_mm']), 15)}mm"
@@ -172,6 +292,7 @@ def pdf_kwargs(cfg, path):
             margin["bottom"] = f"{max(int(cfg['margin_mm']), 15)}mm"
         hdr, ftr = _pagenum_templates(cfg)
         kw.update(display_header_footer=True, header_template=hdr, footer_template=ftr)
+
     kw["margin"] = margin
     return kw
 
@@ -230,8 +351,69 @@ def render_notion_page(page, pid, path, cfg, all_props, hide_names):
     page.evaluate(SCROLL_JS)
     page.evaluate(IMAGES_JS)
     page.wait_for_timeout(int(float(cfg["extra_wait"]) * 1000))
-    css = BASE_CSS + (CLEAN_CSS if cfg["clean_layout"] else "") + (cfg.get("custom_css") or "")
+
+    # Build CSS with optional improvements
+    css_parts = [BASE_CSS]
+
+    # Cover page CSS
+    if cfg.get("cover_page_improved", False):
+        css_parts.append("""
+.notion-cover-page {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  min-height: 80vh;
+  padding: 4rem 2rem;
+  text-align: center;
+  background: linear-gradient(135deg, #f7f6f3 0%, #e9e9e7 100%);
+}
+.notion-cover-page h1 {
+  font-size: 2.5cm;
+  margin: 0 0 1rem;
+  color: #37352f;
+}
+.notion-cover-page .notion-page-icon {
+  font-size: 120px;
+  margin: 0 0 0.5rem;
+}
+.notion-cover-page .props-table,
+.notion-cover-page .props-pills,
+.notion-cover-page .props-list {
+  opacity: 0.8;
+}
+""")
+
+    # Watermark CSS
+    if cfg.get("watermark_text", "").strip():
+        wm_text = cfg.get("watermark_text", "").strip()
+        wm_opacity = cfg.get("watermark_opacity", 0.15)
+        # Escape any special CSS characters in watermark text
+        wm_text_escaped = wm_text.replace('\\', '\\\\').replace('"', '\\"')
+        watermark_css = WATERMARK_CSS.replace("@@@WATERMARK@@@", wm_text_escaped)
+        watermark_css = watermark_css.replace("@@@OPACITY@@@", str(wm_opacity))
+        css_parts.append(watermark_css)
+
+    # Booklet mode CSS
+    if cfg.get("booklet_mode", False):
+        css_parts.append(BOOKLET_CSS)
+
+    # Clean layout
+    if cfg.get("clean_layout", True):
+        css_parts.append(CLEAN_CSS)
+
+    # Custom CSS
+    custom_css = cfg.get("custom_css") or ""
+    if custom_css:
+        css_parts.append(custom_css)
+
+    css = "\n".join(css_parts)
     page.add_style_tag(content=css)
+
+    # Generate Table of Contents if enabled
+    if cfg.get("table_of_contents", False):
+        page.evaluate(TOC_JS)
+
     if hide_names:
         page.evaluate(HIDE_PROPS_JS, {"hide": hide_names, "all": all_props})
     mode = {LINK_MODES[1]: "all", LINK_MODES[2]: "internal"}.get(cfg["links"])
