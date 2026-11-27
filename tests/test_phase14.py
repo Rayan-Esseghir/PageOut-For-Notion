@@ -78,12 +78,17 @@ class TestTemplate:
         assert result == "prefix  suffix"
 
     def test_template_html_escaping(self):
-        """Test that HTML tags are escaped in HTML templates."""
-        source = "<div>{{ content }}</div>"
+        """Test that HTML tags are escaped for general variables in HTML templates."""
+        # content and body_classes are trusted (pre-rendered HTML), so they are not escaped
+        # Other variables like title should be escaped
+        source = "<div>{{ title }}</div><span>{{ content }}</span>"
         template = Template(source, template_type="html")
-        result = template.render({"content": "<script>alert('xss')</script>"})
+        result = template.render({"title": "<script>alert('xss')</script>", "content": "<b>safe html</b>"})
+        # title should be escaped (XSS protection)
         assert "&lt;script&gt;" in result
         assert "<script>" not in result
+        # content should NOT be escaped (it's pre-rendered HTML from the pipeline)
+        assert "<b>safe html</b>" in result
 
     def test_template_no_escape_for_css(self):
         """Test that css key values are not HTML-escaped."""

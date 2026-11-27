@@ -490,22 +490,589 @@ EN = {
     "first_run_complete_msg": "Setup complete! You can now start exporting your Notion pages.",
     "check_setup_copy_no_data": "No diagnostics data available.",
     "check_setup_copy_success": "Diagnostics copied to clipboard (secrets redacted).",
+
+    # === Phase 12: Scheduling ===
+    "menu_schedule": "Schedule",
+    "schedule_menu_add": "Add Schedule",
+    "schedule_menu_list": "View Schedules",
+    "schedule_title": "Scheduled Exports",
+    "schedule_add_button": "Add New",
+    "schedule_refresh": "Refresh",
+    "schedule_close": "Close",
+    "schedule_name_label": "Schedule Name:",
+    "schedule_source_label": "Source (URL or ID):",
+    "schedule_output_label": "Output Directory:",
+    "schedule_formats_label": "Formats:",
+    "schedule_schedule_label": "Schedule:",
+    "schedule_preview": "Preview:",
+    "schedule_save": "Save",
+    "schedule_cancel": "Cancel",
+    "schedule_added": "Schedule added successfully!",
+    "schedule_removed": "Schedule removed.",
+    "schedule_enabled": "Schedule enabled.",
+    "schedule_disabled": "Schedule disabled.",
+    "schedule_scheduled": "Scheduled task registered with OS scheduler.",
+    "schedule_error": "Could not register scheduled task with OS scheduler.",
+    "schedule_column_name": "Name",
+    "schedule_column_source": "Source",
+    "schedule_column_format": "Formats",
+    "schedule_column_schedule": "When",
+    "schedule_column_status": "Status",
+    "schedule_column_last_run": "Last Run",
+    "schedule_status_active": "Active",
+    "schedule_status_disabled": "Disabled",
+    "schedule_status_error": "Error",
+    "schedule_action_enable": "Enable",
+    "schedule_action_disable": "Disable",
+    "schedule_action_remove": "Remove",
+    "schedule_action_edit": "Edit",
+    "schedule_column_id": "ID",
+    "no_schedules": "No schedules configured yet.",
 }
 
 _current_lang = "en"
 
 
-def _(key: str) -> str:
-    """Translation function - returns English string for key."""
-    return EN.get(key, key)
-
-
-def get_string(key: str) -> str:
-    """Get translated string."""
-    return EN.get(key, key)
-
-
-def set_language(lang: str):
-    """Set current language (placeholder for future multi-language support)."""
+def set_language(lang: str) -> None:
+    """Set the current UI language."""
     global _current_lang
-    _current_lang = lang
+    if lang in LANGUAGES:
+        _current_lang = lang
+
+
+def get_current_language() -> str:
+    """Get the current UI language code."""
+    return _current_lang
+
+
+def get_string(key: str, lang: Optional[str] = None) -> str:
+    """Get a translated string by key. Falls back to English if not found."""
+    target_lang = lang or _current_lang
+    table = AR if target_lang == "ar" else EN
+    return table.get(key, EN.get(key, key))
+
+
+def is_rtl() -> bool:
+    """Check if current language requires RTL layout."""
+    return _current_lang in ("ar", "he", "fa", "ur")
+
+
+def _(key: str) -> str:
+    """Translation alias - shorthand for get_string(key)."""
+    return get_string(key)
+
+
+# === Phase 18: Internationalization ===
+# Arabic (AR) translations with RTL support
+AR = {
+    # Main window
+    "title_prefix": "PageOut",
+    "status_bar": "اتبع التبويبات 1 → 8، ثم اضغط على التصدير. فقط التبويبان 1 و 8 مطلوبان.",
+
+    # Tabs
+    "tab_source": "1  المصدر",
+    "tab_pages": "2  الصفحات",
+    "tab_formats": "3  التنسيقات",
+    "tab_design": "4  التصميم",
+    "tab_images": "5  الصور",
+    "tab_pdf": "6  PDF",
+    "tab_latex": "7  LaTeX & AI",
+    "tab_output": "8  الإخراج",
+
+    # Source tab - Notion connection
+    "integration_token": "رمز الاندماج",
+    "show_token": "إظهار الرمز",
+    "remember_token": "تذكير على هذا الكمبيوتر (OS keyring)",
+    "open_integrations": "فتح صفحة التكاملات ↗",
+    "allow_plaintext": "السماح بتخزين نصي إذا لم يتوفر OS keyring",
+    "notion_connection": "اتصال Notion",
+    "saved_source": "المصدر المحفوظ",
+    "database_page_link": "رابط قاعدة البيانات / الصفحة",
+    "it_is_a": "هو…",
+    "private_pages": "الصفحات الخاصة — محرك PDF Browser فقط",
+    "use_login": "استخدام تسجيل الدخول المحفوظ الخاص بي",
+    "log_in_to_notion": "تسجيل الدخول إلى Notion…",
+    "login_instructions": "يتم فتح نافذة مراجعة: سجّل الدخول، ثم أغلق النافذة.",
+
+    # Pages tab
+    "choose_pages": "اختر الصفحات",
+    "load_pages": "تحميل الصفحات",
+    "select_all": "تحديد الكل",
+    "clear": "مسح",
+    "page_list": "قائمة الصفحات (اختياري)",
+    "page_list_hint": "إذا لم يتم الضغط، يتم تصدير جميع الصفحات. بعد التحميل، يتم تصدير الصفحات المحددة فقط.",
+    "order_filter": "ترتيب وتصفية",
+    "sort_by": "ترتيب حسب",
+    "descending": "تنازلي",
+    "only_pages_where": "الصفحات التي",
+    "max_pages": "الحد الأقصى للصفحات",
+    "file_names": "أسماء الملفات",
+    "name_format": "تنسيق الاسم",
+    "examples": "أمثلة",
+    "preview_names": "معاينة الأسماء",
+    "name_hint": "المحاكاة: {title} {date} {index} {created} {edited} {parent}\nانقر على \"تحميل الخصائص\" لعرض خصائصك الخاصة.\nالتنسيقات: {date:%d-%m-%Y}   {title:40} (اقتباس)",
+
+    # Formats tab
+    "export_as": "تصدير كـ (اختر واحد أو أكثر)",
+    "pdf": "PDF",
+    "html": "HTML",
+    "markdown": "Markdown",
+    "text": "Text",
+    "word": "Word",
+    "json": "JSON",
+    "latex": "LaTeX (.tex)",
+    "images": "Images",
+    "pdf_engine": "المحرك",
+    "api_engine": "API (سريع، لا حاجة لتسجيل الدخول)",
+    "browser_engine": "Browser (المظهر الفعلي لـ Notion)",
+    "engine_hint": "API = سريع، لا حاجة لتسجيل الدخول، يستخدم إعدادات تبويب التصميم.\nBrowser = يطبع صفحة Notion الحقيقية (أبطأ؛ يحتاج تسجيل الدخول؛ يتجاهل إعدادات التصميم).",
+    "sub_pages": "الصفحات الفرعية",
+    "skip": "تخطي",
+    "inline": "مدمجة في الأب",
+    "separate": "ملفات منفصلة",
+    "depth": "العمق",
+    "depth_hint": "عدد المستويات من الصفحات الفرعية التي سيتم تتبعها.",
+    "sub_dbs": "تصدير أيضاً صفحات قواعد البيانات الداخلية (وضع الملفات المنفصلة)",
+    "combined_file": "إنشاء ملف موحد لـ HTML / Markdown / LaTeX",
+
+    # Design tab
+    "quick_style": "نمط سريع",
+    "style_preset": "مسبق التنسيق",
+    "fonts": "الخطوط",
+    "body_font": "خط النص الأساسي",
+    "heading_font": "خط العناوين",
+    "google_fonts": "تحميل الخطوط من Google Fonts عند الحاجة (يتطلب إنترنت)",
+    "font_size": "حجم الخط (بكس)",
+    "line_spacing": "تباعد الأسطر",
+    "text_alignment": "محاذاة النص",
+    "title_alignment": "محاذاة العنوان",
+    "color": "اللون",
+    "accent_color": "لون التمييز",
+    "choose": "اختر…",
+    "title_area": "منطقة العنوان",
+    "show_line": "إظهار خط متوهج تحت عنوان الصفحة",
+    "page_icon": "أيقونة الصفحة",
+    "custom_icon": "ملف أيقونة مخصص",
+    "cover_page": "صف الغلاف: العنوان والأيقونة والخصائص فقط في الصفحة الأولى",
+    "properties": "الخصائص (حقول قاعدة البيانات)",
+    "layout": "تخطيط",
+    "table": "جدول Notion",
+    "pills": "أقراص مدمجة",
+    "list": "قائمة بسيطة",
+    "hidden": "مخفي",
+    "date_format": "تنسيق التاريخ",
+    "load_properties": "تحميل الخصائص",
+    "show_these": "إظهار هؤلاء",
+    "tick_all": "تحديد الكل",
+    "untick_all": "إلغاء تحديد الكل",
+    "content": "المحتوى",
+    "render_math": "عرض المعادلات الرياضية بشكل حلو (KaTeX)",
+    "math_engine": "محرك الرياضيات",
+    "linked_pages": "إعادة كتابة الروابط بين الصفحات المصدرة إلى ملفات محلية",
+    "expand_toggles": "توسيع جميع الإدخالات القابلة للطي",
+    "links": "الروابط",
+    "keep_links": "الاحتفاظ بكل الروابط",
+    "remove_links": "إزالة جميع الروابط",
+    "remove_internals": "إزالة الروابط الداخلية فقط",
+    "light_theme": "فرض الوضع الفاتح (محرك PDF Browser فقط)",
+    "clean_layout": "إخفاء الشريط الجانبي العلوي لـ Notion (محرك PDF Browser فقط)",
+    "custom_css": "CSS مخصص (للمختصين)",
+
+    # Images tab
+    "images_inside": "الصور داخل المستندات",
+    "handling": "معالجة",
+    "embed": "تضمين في الملف",
+    "save_locally": "حفظ محلياً وربط",
+    "keep_link": "الاحتفاظ بالرابط",
+    "optimize": "ضغط الصور الكبيرة لـ PDF / Word (أسرع، ملفات أصغر)",
+    "max_image_size": "أقصى حجم للصورة (بكس)",
+    "image_layout": "تخطيط الصور (PDF / HTML / Word)",
+    "maximize": "تضخيم الصور (عرض الصفحة كاملة)",
+    "one_per_page": "صورة واحدة لكل صفحة",
+    "show_names": "إظهار أسماء ملفات الصور تحت الصور",
+    "caption_format": "تنسيق الشرح",
+    "save_images": "حفظ ملفات الصور (اختر \"Images\" في التبويب 3)",
+    "file_name_format": "تنسيق اسم الملف",
+    "image_examples": "أمثلة",
+    "img_subfolder": "وضع كل صفحة في مجلدها الخاص",
+    "img_cover": "تضمين تغطيات الصفحات",
+
+    # PDF tab
+    "page": "الصفحة",
+    "page_size": "حجم الصفحة",
+    "orientation": "الاتجاه",
+    "portrait": "Portrait",
+    "landscape": "Landscape",
+    "margin": "الهامش (مم)",
+    "scale": "نسبة العرض (%)",
+    "print_background": "طباعة خلفيات الألوان",
+    "remove_blank": "إزالة الصفحات الفارغة تلقائياً",
+    "page_numbers": "إضافة أرقام الصفحات",
+    "position": "الموقع",
+    "bottom_center": "الوسط السفلي",
+    "bottom_right": "اليمين السفلي",
+    "top_right": "اليمين العلوي",
+    "format": "التنسيق",
+
+    # LaTeX & AI tab
+    "latex": "LaTeX (.tex)",
+    "export_latex": "تصدير كـ LaTeX (.tex) (اكتب مع pdflatex أو xelatex للعربية)",
+    "images_in_tex": "الصور في .tex",
+    "copy_latex": "📋 نسخ LaTeX الأخير المصدَر",
+    "clipboard_copy_done": "تم نسخ مستند LaTeX إلى الحافظة!",
+    "latex_not_ready": "لا يوجد تصدير LaTeX متاح بعد. شغّل تصديراً مع اختيار 'LaTeX (.tex)'.",
+    "gemini_ocr": "Gemini Math OCR — صور السبورة → LaTeX",
+    "key_note": "كل مستخدم يدخل مفتاحه الخاص. يتم التخزين في OS keyring أو ملف الإعدادات.",
+    "api_key": "مفتاح Gemini API",
+    "show": "إظهار",
+    "save": "حفظ",
+    "get_key": "الحصول على مفتاح مجاني ↗",
+    "scan_images": "مسح الصور مع Gemini Math OCR",
+    "model": "النموذج",
+    "keep_whiteboard": "حفظ ملاحظة بالصورة الأصلية أسفل النص",
+
+    # Output tab
+    "output_folder": "مجلد الإخراج (مطلوب)",
+    "pdf_output": "إخراج PDF",
+    "merged_name": "اسم الملف الموحد",
+    "bookmarks": "إضافة علامات مرجعية إلى PDF الموحد",
+    "speed_reliability": "السرعة والموثوقية",
+    "parallel_downloads": "تنزيلات متوازية",
+    "download_hint": "يتم جلب الصفحات والصور في الخلفية بينما يتم عرض الصفحات السابقة.",
+    "incremental_sync": "مزامنة تلقائية: تخطي الصفحات التي لم تتغير",
+    "incremental_hint": "تستخدم وقت آخر تعديل لـ Notion. مفعلة تلقائياً للملفات الموحدة.",
+    "force_export": "إعادة تصدير كاملة (تجاهل الكاش التلقائي)",
+    "skip_existing": "تخطي الملفات المصدَرة مسبقاً (استئناف التصدير المقطوعة)",
+    "retries": "إعادة المحاولة عند الفشل",
+    "extra_wait": "انتظار إضافي لكل صفحة (ث)",
+    "profile_timing": "حفظ timing_report.json بيانات تصفح التنفيذ",
+
+    # Actions
+    "export": "تصدير",
+    "cancel": "إلغاء",
+    "copy_latex_action": "📋 نسخ LaTeX",
+    "about": "حول / Beta",
+    "done": "تم",
+    "exported": "صفحة (ات)",
+    "unchanged": "صفحة (ات) تم تخطيها",
+    "force_reexport": "(اختر \"إعادة التصدير الكاملة\" لإعادة التصدير)",
+    "timing": "الوقت",
+    "problems": "مشكلة (ات)",
+    "cancelled": "تم الإلغاء. تم الاحتفاظ بما تم تصديره.",
+    "export_failed": "فشل التصدير",
+
+    # Dialogs
+    "missing_info": "معلومات ناقصة",
+    "missing_info_msg": "أدخل رمز Notion وقيمة معرّف قاعدة البيانات أو الصفحة أو الرابط.",
+    "missing_folder": "مجلد ناقص",
+    "missing_folder_msg": "اختر مجلد الإخراج في تبويب الإخراج.",
+    "invalid_value": "قيمة غير صالحة",
+    "invalid_value_msg": "تحقق من الحقول العددية.",
+    "no_pages_selected": "لا توجد صفحات محددة",
+    "no_pages_msg": "اختر صفحة واحدة على الأقل في التبويب 2، أو امسح القائمة.",
+    "could_not_load_props": "تعذر تحميل الخصائص",
+    "could_not_load_pages": "تعذر تحميل الصفحات",
+    "preview_failed": "فشلت المعاينة",
+    "choose_font": "اختر خطاً",
+    "font_hint": "بحث:",
+    "no_font_selected": "لم يتم اختيار خط",
+    "use_this_font": "استخدم هذا الخط",
+    "cancel_font": "إلغاء",
+    "choose_color": "لون التمييز (العناوين، الروابط، مقاطع الاقتباس)",
+    "token_saved": "تم حفظ المفتاح",
+    "secrets_not_saved": "لم يتم حفظ الأسرار",
+    "keyring_saving": "تم العثور على Keyring: نعم — يتم تخزين الأسرار في مخزن المفاتيح.",
+    "no_keyring": "لم يتم العثور على OS keyring (pip install keyring). بدونه لا يُتذكر الرمز إلا إذا عُلمت.",
+
+    # Status
+    "nothing_selected": "(اختر مجلد إخراج في التبويب 8)",
+    "will_export": "سيتم تصدير:",
+
+    # Font picker
+    "arabic_text": "The quick brown fox 0123456789  —  مرحبا بالعالم",
+    "font_search": "بحث:",
+    "recommended": "موصى به (رمادي = غير مثبت؛ Google Fonts يحتاج خيار تصميم)",
+    "installed_ons_pc": "مثبت على هذا الكمبيوتر",
+    "generic": "Generic",
+    "sans_serif": "Sans-serif",
+    "serif": "Serif",
+    "monospace": "Monospace",
+
+    # Error messages
+    "invalid_format": "تنسيق غير معروف",
+    "choose_formats": "اختر من:",
+    "unknown_format": "تنسيق غير معروف",
+    "no_format_selected": "لم يتم اختيار تنسيق. استخدم --format, مثلاً --format pdf,md",
+    "no_token": "لا يوجد رمز Notion. أضف NOTION_TOKEN أو احفظه في التطبيق أو استخدم --token.",
+    "nothing_to_export": "لا يوجد شيء للتصدير. أدخل رابط صفحة أو قاعدة بيانات (أو --zip).",
+    "package_missing": "الحزمة مفقودة",
+    "genai_required": "مكتبة 'google-genai' مطلوبة لـ Gemini Math OCR.",
+    "genai_install": "يرجى التثبيت مع:\n  pip install google-genai",
+    "gemini_key_required": "مفتاح Gemini API مطلوب",
+    "gemini_key_missing": "تم تمكين Math OCR مع Gemini Vision، لكن لم يتم إدخال مفتاح Gemini API.",
+    "gemini_key_instructions": "يرجى إدخال مفتاح Gemini API في تبويب LaTeX & OCR.",
+    "gemini_key_link": "يمكنك الحصول على مفتاح مجاني من:\nhttps://aistudio.google.com/",
+
+    # Font families
+    "same_as_body": "بنفس خط النص",
+
+    # === U2: Look & Navigation ===
+    # Sidebar navigation
+    "sidebar_source": "1  المصدر",
+    "sidebar_pages": "2  الصفحات",
+    "sidebar_formats": "3  التنسيقات",
+    "sidebar_design": "4  التصميم",
+    "sidebar_images": "5  الصور",
+    "sidebar_pdf": "6  PDF",
+    "sidebar_latex": "7  LaTeX & AI",
+    "sidebar_output": "8  الإخراج",
+
+    # Menu bar
+    "menu_file": "ملف",
+    "menu_profiles": "الملفات",
+    "menu_tools": "الأدوات",
+    "menu_help": "المساعدة",
+    "menu_new": "جديد",
+    "menu_open_config": "فتح مجلد الإعدادات",
+    "menu_save_profile": "حفظ الملف…",
+    "menu_load_profile": "تحميل الملف…",
+    "menu_manage_profiles": "إدارة الملفات…",
+    "menu_export_settings": "تصدير الإعدادات…",
+    "menu_import_settings": "استيراد الإعدادات…",
+    "menu_preferences": "التفضيلات…",
+    "menu_exit": "الخروج",
+    "menu_validate": "التحقق من الإعدادات",
+    "menu_clear_cache": "مسح الكاش",
+    "menu_load_props": "تحميل الخصائص",
+    "menu_load_pages": "تحميل الصفحات",
+    "menu_preview_names": "معاينة الأسماء",
+    "menu_export_queue": "قائمة التصدير…",
+    "menu_view_timing_report": "عرض تقرير التصدير…",
+    "menu_about": "حول…",
+    "menu_shortcuts": "اختصارات لوحة المفاتيح…",
+
+    # Timing report viewer
+    "timing_report_title": "تقرير تصفح التنفيذ",
+    "timing_report_load": "تحميل التقرير…",
+    "timing_report_no_data": "لا توجد بيانات وقت.",
+    "timing_report_total": "الوقت الكلي:",
+    "timing_report_categories": "الفئات:",
+
+    # Simple/Advanced mode
+    "simple_mode": "الوضع البسيط",
+    "advanced_mode": "الوضع المتقدم",
+    "mode_toggle": "الوضع:",
+
+    # Theme switching
+    "theme_light": "فاتح",
+    "theme_dark": "داكن",
+    "theme_system": "نظام",
+    "theme_label": "الثيم:",
+
+    # Status bar
+    "status_ready": "جاهز",
+    "status_exporting": "جارٍ التصدير…",
+    "status_cancelled": "تم الإلغاء",
+
+    # Window state
+    "window_geometry": "هندسة النافذة",
+
+    # Preferences dialog
+    "preferences": "التفضيلات",
+    "preferences_appearance": "المظهر",
+    "preferences_behavior": "السلوك",
+    "preferences_shortcuts": "اختصارات لوحة المفاتيح",
+    "prefs_auto_save": "حفظ الإعدادات تلقائياً عند التغيير",
+    "prefs_remember_window": "تذكر حجم ونقطة النافذة",
+    "prefs_confirm_exit": "تأكيد عند الخروج",
+    "prefs_tooltip_delay": "وقت التلميح (مللي ثانية):",
+
+    # Shortcuts
+    "shortcut_export": "تصدير",
+    "shortcut_save": "حفظ الإعدادات",
+    "shortcut_load_props": "تحميل الخصائص",
+    "shortcut_refresh": "تحديث / إعادة تحميل",
+    "shortcut_cancel": "إلغاء التصدير",
+    "shortcut_find": "بحث في السجل",
+    "shortcut_preferences": "التفضيلات",
+    "shortcut_export_help": "بدء عملية التصدير",
+    "shortcut_save_help": "حفظ الإعدادات الحالية",
+    "shortcut_load_props_help": "تحميل الخصائص من Notion",
+    "shortcut_refresh_help": "تحديث العرض الحالي أو إعادة تحميل البيانات",
+    "shortcut_cancel_help": "إلغاء عملية التصدير الجارية",
+    "shortcut_find_help": "البحث في سجل العرض",
+    "shortcut_preferences_help": "فتح نافذة التفضيلات",
+
+    # === U5: Settings UX ===
+    # Preferences search
+    "preferences_search": "بحث في الإعدادات:",
+    "preferences_reset_all": "إعادة الضبط",
+    "preferences_cancel": "إلغاء",
+    "preferences_ok": "موافق",
+    "preferences_reset": "إعادة تعيين التفضيلات",
+    "preferences_reset_confirm": "إعادة تعيين جميع الإعدادات إلى الافتراضيات؟ لا يمكن التراجع عن ذلك.",
+    "preferences_reset_done": "تمت إعادة تعيين جميع الإعدادات إلى الافتراضيات.",
+    "preferences_applied": "تم حفظ التفضيلات",
+    "preferences_applied_msg": "تم تطبيق تغييراتك وحفظها.",
+
+    # Theme
+    "theme_light": "فاتح",
+    "theme_dark": "داكن",
+    "theme_system": "نظام",
+    "theme_label": "الثيم:",
+
+    # Section header for Preferences dialogs
+    "preferences_theme": "إعدادات المظهر",
+
+    # UI Scale
+    "ui_scale": "مقياس الواجهة:",
+    "ui_scale_help": "اضبط تعديل الواجهة لتكبير الشاشات عالية الدقة. 1.0 = 100%.",
+    "preferences_ui_scale": "مقياس الواجهة",
+
+    # Accent color
+    "accent_color": "لون التمييز",
+    "accent_color_help": "خصص لون التمييز للأزرار والروابط والمؤشرات.",
+    "color_picker_title": "اختر لون التمييز",
+    "preferences_accent": "لون التمييز",
+
+    # Window management
+    "preferences_window_section": "إدارة النافذة",
+    "prefs_remember_window": "تذكر حجم ونقطة النافذة",
+    "prefs_confirm_exit": "تأكيد عند الخروج",
+    "window_management_help": "التحكم في كيفية تعامل التطبيق مع حالة النافذة.",
+    "prefs_tooltip_delay": "وقت التلميح (مللي ثانية):",
+    "tooltip_delay_help": "الوقت قبل ظهور التلميح (مللي ثانية).",
+
+    # Auto-save section
+    "preferences_auto_save_section": "حفظ تلقائي للإعدادات",
+    "prefs_auto_save": "حفظ الإعدادات تلقائياً عند التغيير",
+    "prefs_auto_save_help": "حفظ الإعدادات تلقائياً عند حدوث التغيير.",
+
+    # Shortcuts section
+    "preferences_main_shortcuts": "اختصارات لوحة المفاتيح",
+
+    # Font picker enhancements
+    "font_favorites": "المفضلة",
+    "font_recent": "الاستخدام الأخير",
+    "font_preview": "معاينة:",
+    "font_preview_text_arabic": "مرحبا بالعالم",
+    "font_size_label": "حجم الخط",
+    "add_to_favorites": "إضافة إلى المفضلة",
+    "remove_from_favorites": "إزالة من المفضلة",
+
+    # Color picker enhancements
+    "color_favorites": "ألوان مفضلة",
+    "color_contrast_warning": "تحذير من التباين",
+    "color_contrast_insufficient": "تقارب منخفض - قد يكون النص صعب القراءة",
+    "color_contrast_acceptable": "التقارب جيد",
+
+    # Reset per section
+    "reset_section": "إعادة الضبط",
+    "section_modified": "● تم التعديل",
+
+    # === U6: Onboarding & Help ===
+    # First-run wizard
+    "first_run_wizard_title": "مرحباً بك في PageOut",
+    "first_run_step1": "الخطوة 1: رمز الاندماج",
+    "first_run_step1_desc": "احصل على رمزك من notion.so/my-integrations والصقه أدناه.",
+    "first_run_step2": "الخطوة 2: اختبار التصدير",
+    "first_run_step2_desc": "دعنا نجرب تصديراً سريعاً للتأكد من أن كل شيء يعمل.",
+    "first_run_step3": "الخطوة 3: اختر مجلد الإخراج",
+    "first_run_step3_desc": "اختر أين ستُحفظ ملفات PDF.",
+    "first_run_complete": "اكتمل أول تشغيل!",
+    "first_run_skip": "تخطي أول تشغيل (يمكنك تشغيله لاحقاً من قائمة المساعدة)",
+    "onboarding_welcome": "معلم الإعدادات",
+    "onboarding_welcome_desc": "دعنا نكوّن PageOut مع حسابك.",
+    "onboarding_token_label": "رمز الاندماج",
+    "onboarding_token_desc": "الصق رمز الاندماج هنا.",
+    "onboarding_test_export": "اختبار التصدير",
+    "onboarding_test_export_desc": "صدّر صفحة نمطية للتحقق.",
+    "onboarding_output_folder": "مجلد الإخراج",
+    "onboarding_output_folder_desc": "اختر أين ستحفظ ملفات التصدير.",
+    "onboarding_browse": "تصفح…",
+    "onboarding_next": "التالي",
+    "onboarding_back": "رجوع",
+    "onboarding_finish": "إنهاء الإعداد",
+    "onboarding_cancel": "إلغاء",
+
+    # Help menu items
+    "check_my_setup": "افحص إعداداتي",
+    "check_setup_title": "فحص النظام",
+    "check_setup_desc": "شغّل فحوصات لتشخيص مشاكل التصدير.",
+    "check_setup_running": "جارٍ الفحص…",
+    "check_setup_done": "اكتمال الفحص!",
+    "check_setup_copy": "نسخ النتائج",
+    "check_setup_copy_desc": "نسخ البيانات إلى الحافظة (مخفاة)",
+
+    # About dialog
+    "about_title": "حول PageOut for Notion",
+    "about_version": "الإصدار",
+    "about_stage": "البناء",
+    "about_description": "صدّر صفحات Notion إلى PDF وHTML وMarkdown وLaTeX والمزيد.",
+    "about_author": "صمم بواسطة Rayan Esseghir",
+    "about_license": "رخصة MIT",
+    "about_check_updates": "التحقق من التحديثات",
+    "about_copyright": "© 2024 Rayan Esseghir",
+
+    # Diagnostics results
+    "diag_status_ok": "موافق",
+    "diag_status_warning": "تحذير",
+    "diag_status_error": "خطأ",
+    "diag_status_info": "معلومات",
+
+    # Diagnostic check names
+    "diag_python": "إصدار Python",
+    "diag_os": "نظام التشغيل",
+    "diag_network": "الاتصال بالشبكة",
+    "diag_write": "الصلاحيات",
+    "diag_browser": "المتصفح (Chromium)",
+    "diag_token": "رمز Notion",
+    "diag_fonts": "الخطوط",
+    "diag_keyring": "OS Keyring",
+    "diag_version": "إصدار التطبيق",
+
+    # Additional U6 keys
+    "first_run_complete_msg": "تم إعداد التطبيق! يمكنك الآن البدء في تصدير صفحات Notion.",
+    "check_setup_copy_no_data": "لا توجد بيانات فحص.",
+    "check_setup_copy_success": "تم نسخ البيانات إلى الحافظة.",
+
+    # === Phase 12: Scheduling ===
+    "menu_schedule": "الجدولة",
+    "schedule_menu_add": "إضافة جدولة",
+    "schedule_menu_list": "عرض الجدول",
+    "schedule_title": "تصديرات مجدولة",
+    "schedule_add_button": "إضافة جديدة",
+    "schedule_refresh": "تحديث",
+    "schedule_close": "إغلاق",
+    "schedule_name_label": "اسم الجدولة:",
+    "schedule_source_label": "المصدر (رابط أو معرّف):",
+    "schedule_output_label": "مجلد الإخراج:",
+    "schedule_formats_label": "التنسيقات:",
+    "schedule_schedule_label": "الجدولة:",
+    "schedule_preview": "معاينة:",
+    "schedule_save": "حفظ",
+    "schedule_cancel": "إلغاء",
+    "schedule_added": "تمت إضافة الجدولة بنجاح!",
+    "schedule_removed": "تمت إزالة الجدولة.",
+    "schedule_enabled": "تم تمكين الجدولة.",
+    "schedule_disabled": "تم تعطيل الجدولة.",
+    "schedule_scheduled": "تم تسجيل مهمة في المجدول.",
+    "schedule_error": "تعذر تسجيل الجدولة.",
+    "schedule_column_name": "الاسم",
+    "schedule_column_source": "المصدر",
+    "schedule_column_format": "التنسيقات",
+    "schedule_column_schedule": "متى",
+    "schedule_column_status": "الحالة",
+    "schedule_column_last_run": "آخر تشغيل",
+    "schedule_status_active": "نشط",
+    "schedule_status_disabled": "معطل",
+    "schedule_status_error": "خطأ",
+    "schedule_action_enable": "تمكين",
+    "schedule_action_disable": "تعطيل",
+    "schedule_action_remove": "إزالة",
+    "schedule_action_edit": "تعديل",
+    "schedule_column_id": "المعرّف",
+    "no_schedules": "لا توجد جداول بعد.",
+}
+
+LANGUAGES = ("en", "ar")

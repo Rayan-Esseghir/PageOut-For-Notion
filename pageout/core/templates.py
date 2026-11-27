@@ -84,13 +84,18 @@ class Template:
 
         if self.template_type == "html":
             # HTML escape everything, but allow certain safe keys
-            # Check if this is a CSS or URL context
-            if key in ('css', 'head_extra'):
-                # CSS and head_extra should NOT be escaped as they contain HTML/CSS
+            # Check if this is a CSS, content, or URL context
+            if key in ('css', 'head_extra', 'content', 'body_classes'):
+                # CSS, head_extra, content, and body_classes should NOT be escaped
+                # as they contain HTML/CSS/markup
                 return str_value
             return html.escape(str_value, quote=True)
         else:
             # Markdown: escape pipe characters and backticks for table safety
+            # But content and frontmatter should NOT be escaped (they contain markup)
+            if key in ('content', 'frontmatter'):
+                str_value = str_value.replace('\n', ' ')
+                return str_value
             str_value = str_value.replace('|', '\\|').replace('\n', ' ')
             return str_value
 

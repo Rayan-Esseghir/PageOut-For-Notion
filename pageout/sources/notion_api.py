@@ -203,9 +203,24 @@ def query_all(notion, database_id, limit=None):
         raise Exception("Could not access the database. " + str(first or e))
 
 
-def resolve_roots(notion, source_text, source_type):
-    """Turn IDs/URLs (space or comma separated) into page objects."""
-    tokens = [t for t in re.split(r"[\s,;]+", source_text.strip()) if t]
+def resolve_roots(notion, source_text, source_type, extra_sources=None):
+    """Turn IDs/URLs (space or comma separated) into page objects.
+
+    Args:
+        notion: Notion client instance
+        source_text: Main source (database/page ID or URL)
+        source_type: Type of source (Auto-detect, Database, Single page)
+        extra_sources: Optional list of additional source IDs/URLs to include
+    """
+    # Combine main source with extra sources
+    all_sources = [source_text]
+    if extra_sources:
+        all_sources.extend(extra_sources)
+
+    # Build combined source text (space-separated for token splitting)
+    combined_text = " ".join(str(s) for s in all_sources if s)
+
+    tokens = [t for t in re.split(r"[\s,;]+", combined_text.strip()) if t]
     if not tokens:
         raise Exception("Enter a database or page ID / URL.")
     roots, seen = [], set()

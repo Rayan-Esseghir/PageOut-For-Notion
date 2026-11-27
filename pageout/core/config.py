@@ -421,6 +421,12 @@ DEFAULTS = {
     "prefs_remember_window": True,
     "prefs_confirm_exit": False,
     "prefs_tooltip_delay": 500,
+        "prefs_large_export_threshold_mb": 500,
+        "prefs_large_export_estimate_minutes": 0,
+        "prefs_enable_long_paths": True,
+        "prefs_high_contrast": False,
+        "prefs_ui_rtl": False,
+        "prefs_auto_save_interval": 300,
     # Phase 8: Font preferences
     "font_favorites": '["Inter", "Roboto", "Segoe UI", "Arial", "Source Sans 3"]',
     "font_recent": "[]",

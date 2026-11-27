@@ -1,0 +1,4 @@
+# {{ title }}
+
+{{ frontmatter }}
+{{ content }}

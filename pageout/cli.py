@@ -22,10 +22,20 @@ from pageout.core.config import (
     LINK_MODES,
     MD_PRESETS,
     SUB_MODES,
+    SYNC_TARGETS,
     load_config,
 )
 from pageout.core.profiles import list_profiles, save_profile, load_profile, delete_profile, profile_exists, merge_profile_into_config
 from pageout.core.sources import list_sources, get_source, add_source, delete_source, toggle_pin, extract_id_from_url, source_exists
+from pageout.core.scheduler import (
+    add_schedule,
+    remove_schedule,
+    list_schedules,
+    get_schedule,
+    schedule_exists,
+    enable_schedule,
+    disable_schedule,
+)
 from pageout.core.errors import Cancelled
 from pageout.core.pipeline import export
 
@@ -167,6 +177,12 @@ def build_parser():
     # Source support
     e.add_argument("--source", help="load named source (recent database/page)")
     e.add_argument("--list-sources", action="store_true", help="list saved sources and exit")
+    # Phase 16: Sync support
+    e.add_argument("--sync-target", choices=["None", "Local folder", "Google Drive", "Dropbox", "S3", "Git repo"],
+                   help="sync target for post-export")
+    e.add_argument("--sync-path", help="local/network folder path for sync")
+    e.add_argument("--sync-branch", default="main", help="git branch for Git sync")
+    e.add_argument("--sync-after", action="store_true", help="sync after export completes")
 
     sub.add_parser("version", help="print the version")
     i = sub.add_parser("init-config", help="write an example pageout.yaml")
@@ -213,6 +229,28 @@ def build_parser():
     qs_clear = qs_sub.add_parser("clear", help="clear completed/failed/cancelled history")
     qs_stats = qs_sub.add_parser("stats", help="show queue statistics")
 
+    # Schedule subcommands
+    ss = sub.add_parser("schedule", help="manage scheduled exports")
+    ss_sub = ss.add_subparsers(dest="schedule_cmd")
+    ss_list = ss_sub.add_parser("list", help="list all scheduled tasks")
+    ss_add = ss_sub.add_parser("add", help="add a new scheduled task")
+    ss_add.add_argument("name", help="schedule name")
+    ss_add.add_argument("source", help="Notion database/page URL or ID")
+    ss_add.add_argument("schedule", help="schedule expression (cron: * * * * * or Windows: daily/at HH:MM)")
+    ss_add.add_argument("--output", "-o", default="./exports", help="output directory")
+    ss_add.add_argument("--format", "-f", required=True, help="output format(s): pdf,md,html,txt,docx,json,tex")
+    ss_add.add_argument("--filter-prop", help="property to filter by")
+    ss_add.add_argument("--filter-op", choices=["contains", "does not contain", "equals"], default="contains")
+    ss_add.add_argument("--filter-value", help="filter value")
+    ss_add.add_argument("--sort-by", choices=["Date", "Title", "Created", "Last edited", "Database order"], default="Date")
+    ss_add.add_argument("--sort-desc", action="store_true", help="sort descending")
+    ss_add.add_argument("--group-by", help="property to group by")
+    ss_remove = ss_sub.add_parser("remove", help="remove a scheduled task")
+    ss_remove.add_argument("name", help="schedule name to remove")
+    ss_enable = ss_sub.add_parser("enable", help="enable a disabled schedule")
+    ss_enable.add_argument("name", help="schedule name to enable")
+    ss_disable = ss_sub.add_parser("disable", help="disable an active schedule")
+
     return p
 
 
@@ -247,6 +285,22 @@ def make_config(args, warn):
             raise UsageError(f"Source '{args.source}' not found. Use 'pageout source list' to see available sources.")
         cfg["database"] = src["url"]
         cfg["source_type"] = src.get("source_type", "Auto-detect")
+        cfg["sources"] = src.get("sources", [])
+        # Load filter/sort/group_by settings from source
+        if src.get("filter_prop"):
+            cfg["filter_prop"] = src["filter_prop"]
+        if src.get("filter_op"):
+            cfg["filter_op"] = src["filter_op"]
+        if src.get("filter_value"):
+            cfg["filter_value"] = src["filter_value"]
+        if src.get("sort_by"):
+            cfg["sort_by"] = src["sort_by"]
+        cfg["sort_desc"] = bool(src.get("sort_desc", False))
+        cfg["max_pages"] = int(src.get("max_pages", 0))
+        if src.get("group_by"):
+            cfg["group_by"] = src["group_by"]
+        if src.get("workspace"):
+            cfg["workspace"] = src["workspace"]
 
     if args.config:
         apply_settings(cfg, read_settings_file(args.config), warn)
@@ -287,6 +341,16 @@ def make_config(args, warn):
         cfg["rewrite_links"] = False
     if args.profile_timing:
         cfg["profile_timing"] = True
+
+    # Phase 16: Sync configuration
+    if args.sync_target:
+        cfg["sync_target"] = args.sync_target
+    if args.sync_path:
+        cfg["sync_path"] = args.sync_path
+    if args.sync_branch:
+        cfg["sync_branch"] = args.sync_branch
+    if args.sync_after:
+        cfg["sync_after_export"] = True
 
     if not any(cfg.get("fmt_" + f) for f in ALL_FORMATS):
         raise UsageError("No format selected. Use --format, e.g. --format pdf,md")
@@ -450,6 +514,77 @@ def main(argv=None, notion=None, stdout=None, stderr=None):
             stats = q.get_stats()
             for status, count in stats.items():
                 print(f"{status}: {count}", file=out)
+            return EXIT_OK
+        else:
+            build_parser().print_help(out)
+            return EXIT_USAGE
+
+    # Schedule subcommands
+    if args.cmd == "schedule":
+        if args.schedule_cmd == "list":
+            schedules = list_schedules()
+            from pageout.core.scheduler import get_platform
+            platform_name = get_platform()
+            if schedules:
+                for s in schedules:
+                    status_mark = "✓" if s.status.value == "active" else "⊘"
+                    print(f"{status_mark} {s.name} [{s.schedule}] ({platform_name}) -> {s.output_dir}", file=out)
+            else:
+                print("No schedules saved.", file=out)
+            return EXIT_OK
+        elif args.schedule_cmd == "add":
+            if not args.name or not args.source or not args.schedule:
+                build_parser().print_help(err)
+                return EXIT_USAGE
+            try:
+                formats = args.format.split(",") if isinstance(args.format, str) else args.format
+                task_id = add_schedule(
+                    name=args.name,
+                    source=args.source,
+                    output_dir=args.output,
+                    formats=formats,
+                    schedule=args.schedule,
+                    filter_prop=args.filter_prop or "",
+                    filter_op=args.filter_op or "contains",
+                    filter_value=args.filter_value or "",
+                    sort_by=args.sort_by or "Date",
+                    sort_desc=args.sort_desc,
+                    group_by=args.group_by or "",
+                )
+                print(f"Schedule '{args.name}' added with ID: {task_id}", file=out)
+            except ValueError as e:
+                print(f"error: {e}", file=err)
+                return EXIT_USAGE
+            return EXIT_OK
+        elif args.schedule_cmd == "remove":
+            if not args.name:
+                build_parser().print_help(err)
+                return EXIT_USAGE
+            if remove_schedule(args.name):
+                print(f"Schedule '{args.name}' removed.", file=out)
+            else:
+                print(f"Schedule '{args.name}' not found.", file=err)
+                return EXIT_USAGE
+            return EXIT_OK
+        elif args.schedule_cmd == "enable":
+            if not args.name:
+                build_parser().print_help(err)
+                return EXIT_USAGE
+            if enable_schedule(args.name):
+                print(f"Schedule '{args.name}' enabled.", file=out)
+            else:
+                print(f"Schedule '{args.name}' not found.", file=err)
+                return EXIT_USAGE
+            return EXIT_OK
+        elif args.schedule_cmd == "disable":
+            if not args.name:
+                build_parser().print_help(err)
+                return EXIT_USAGE
+            if disable_schedule(args.name):
+                print(f"Schedule '{args.name}' disabled.", file=out)
+            else:
+                print(f"Schedule '{args.name}' not found.", file=err)
+                return EXIT_USAGE
             return EXIT_OK
         else:
             build_parser().print_help(out)

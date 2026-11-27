@@ -477,7 +477,12 @@ def block_html(b, r, img_counter=None):
     return ""
 
 
-def wrap_html(title, body, cfg):
+def wrap_html(title, body, cfg, use_template=True):
+    """Wrap content in HTML template.
+
+    If use_template=True and custom template is configured, uses that.
+    Otherwise falls back to default inline template.
+    """
     css = _build_html_css(cfg) + (cfg.get("custom_css") or "")
     body_classes = []
     if cfg.get("maximize_images"):
@@ -492,6 +497,26 @@ def wrap_html(title, body, cfg):
             head_extra += _katex_bundle() or KATEX_HEAD  # offline; falls back to the CDN
         elif engine == MATH_ENGINES[1]:
             head_extra += KATEX_HEAD
+
+    # Try to use custom template if configured
+    if use_template:
+        try:
+            from pageout.core.templates import TemplateError, template_exists, load_template
+
+            template_name = cfg.get("template", "page")
+            if template_exists(template_name, "html"):
+                tmpl = load_template(template_name, "html")
+                context = {
+                    "title": title,
+                    "body_classes": cls_attr,
+                    "content": body,
+                    "css": css,
+                    "head_extra": head_extra,
+                }
+                return tmpl.render(context)
+        except TemplateError:
+            pass  # Fall back to default template
+
     return (
         f'<!doctype html><html lang="en"><head><meta charset="utf-8">'
         f'<meta name="viewport" content="width=device-width, initial-scale=1">'

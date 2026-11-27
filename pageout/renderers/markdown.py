@@ -1,6 +1,7 @@
 """Markdown renderer (reads IR only)."""
 
 import json
+from typing import Optional
 
 from pageout.core.ir import LIST_KINDS, Asset, plain_text
 
@@ -165,3 +166,34 @@ def md_front_matter(title, rows, preset=None):
         out.append(f"{json.dumps(k, ensure_ascii=False)}: {json.dumps(v, ensure_ascii=False)}")
     out.append("---")
     return "\n".join(out)
+
+
+def wrap_markdown(title, content, cfg, frontmatter="", use_template=True):
+    """Wrap content in Markdown template.
+
+    If use_template=True and custom template is configured, uses that.
+    Otherwise falls back to default structure.
+    """
+    template_name = cfg.get("template", "page")
+
+    if use_template:
+        try:
+            from pageout.core.templates import TemplateError, template_exists, load_template
+
+            if template_exists(template_name, "md"):
+                tmpl = load_template(template_name, "md")
+                context = {
+                    "title": title,
+                    "content": content,
+                    "frontmatter": frontmatter,
+                }
+                return tmpl.render(context)
+        except TemplateError:
+            pass  # Fall back to default structure
+
+    # Default structure
+    result = f"# {title}\n"
+    if frontmatter:
+        result += f"\n{frontmatter}\n"
+    result += f"\n{content}"
+    return result + "\n"
