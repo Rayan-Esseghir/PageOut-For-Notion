@@ -610,3 +610,124 @@ def test_profile_merge_with_overrides(tmp_path, isolated):
     # Should have pdf, not markdown (CLI override wins)
     assert (out_dir / "PDF").exists()
     assert not (out_dir / "Markdown").exists()
+
+
+# ------------------------------------------------------------------ Phase 8b: Saved Sources
+def test_source_save_and_load(tmp_path, isolated):
+    from pageout.core.sources import add_source, get_source, list_sources, delete_source, source_exists
+    from pageout.core.config import DEFAULTS
+
+    # Add a source
+    assert add_source("my-source", "https://www.notion.so/testdb-1234567890abcdef1234567890abcdef", "Database")
+
+    # List sources
+    sources = list_sources()
+    assert "my-source" in [s["name"] for s in sources]
+
+    # Get source
+    src = get_source("my-source")
+    assert src is not None
+    assert src["name"] == "my-source"
+    assert src["source_type"] == "Database"
+    assert src["url"] == "https://www.notion.so/testdb-1234567890abcdef1234567890abcdef"
+
+    # Check exists
+    assert source_exists("my-source") is True
+    assert source_exists("nonexistent") is False
+
+    # Delete source
+    assert delete_source("my-source") is True
+    assert "my-source" not in [s["name"] for s in list_sources()]
+
+
+def test_source_cli_commands(tmp_path, isolated, capsys):
+    # Add a source via CLI
+    code = cli_main([
+        "source", "add", "cli-source", "https://www.notion.so/testsrc-1234567890abcdef1234567890abcdef",
+    ])
+    assert code == 0
+
+    # List sources
+    code = cli_main(["source", "list"])
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "cli-source" in out
+
+    # Delete source
+    code = cli_main(["source", "delete", "cli-source"])
+    assert code == 0
+    capsys.readouterr()  # clear output
+    code = cli_main(["source", "list"])
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "cli-source" not in out
+
+
+def test_source_pin_toggle(tmp_path, isolated):
+    from pageout.core.sources import add_source, list_sources, toggle_pin
+
+    # Add a source
+    add_source("pin-test", "https://www.notion.so/pintest-1234567890abcdef1234567890abcdef")
+
+    # Initially not pinned
+    sources = list_sources()
+    src = next(s for s in sources if s["name"] == "pin-test")
+    assert src.get("pinned") is False or src.get("pinned") is None
+
+    # Toggle pin
+    result = toggle_pin("pin-test")
+    assert result is True
+
+    # Now it should be pinned
+    sources = list_sources()
+    src = next(s for s in sources if s["name"] == "pin-test")
+    assert src.get("pinned") is True
+
+    # Toggle again
+    result = toggle_pin("pin-test")
+    assert result is False
+
+    # Now it should not be pinned
+    sources = list_sources()
+    src = next(s for s in sources if s["name"] == "pin-test")
+    assert src.get("pinned") is False
+
+
+def test_extract_id_from_url():
+    from pageout.core.sources import extract_id_from_url
+
+    # Bare ID
+    assert extract_id_from_url("1234567890abcdef1234567890abcdef") == "1234567890abcdef1234567890abcdef"
+
+    # Full Notion URL
+    result = extract_id_from_url("https://www.notion.so/workspace/My-Page-1234567890abcdef1234567890abcdef")
+    assert result == "1234567890abcdef1234567890abcdef"
+
+    # URL with query string
+    result = extract_id_from_url("https://www.notion.so/1234567890abcdef1234567890abcdef?v=1")
+    assert result == "1234567890abcdef1234567890abcdef"
+
+    # Invalid URL
+    assert extract_id_from_url("not-a-valid-id") is None
+
+
+def test_cli_export_with_saved_source(tmp_path, isolated):
+    # Add a saved source
+    from pageout.core.sources import add_source
+    add_source("test-db", DB_ID, "Database")
+
+    # Export using the saved source via --source
+    out_dir = tmp_path / "source_out"
+    code = cli_main([
+        "export",
+        DB_ID,  # Still need to provide database (source just sets default)
+        "--source", "test-db",
+        "--format", "md",
+        "--token", "tok",
+        "-o", str(out_dir),
+    ], notion=FakeNotion()
+    )
+    assert code == 0
+    assert (out_dir / "Markdown").exists()
+    files = list((out_dir / "Markdown").glob("*.md"))
+    assert len(files) == 2  # DB has 2 pages

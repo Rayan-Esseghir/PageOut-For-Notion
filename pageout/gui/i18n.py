@@ -322,9 +322,6 @@ EN = {
     "theme_system": "System",
     "theme_label": "Theme:",
 
-    # UI Scale
-    "ui_scale": "UI Scale:",
-
     # Status bar
     "status_ready": "Ready",
     "status_exporting": "Exporting…",
@@ -351,6 +348,82 @@ EN = {
     "shortcut_cancel": "Cancel Export",
     "shortcut_find": "Find in Log",
     "shortcut_preferences": "Preferences",
+    "shortcut_export_help": "Start the export process",
+    "shortcut_save_help": "Save current configuration to file",
+    "shortcut_load_props_help": "Load properties from Notion",
+    "shortcut_refresh_help": "Refresh current view or reload data",
+    "shortcut_cancel_help": "Cancel a running export operation",
+    "shortcut_find_help": "Search in the log output",
+    "shortcut_preferences_help": "Open the preferences dialog",
+
+    # === U5: Settings UX ===
+    # Preferences search
+    "preferences_search": "Search settings:",
+    "preferences_reset_all": "Reset All",
+    "preferences_cancel": "Cancel",
+    "preferences_ok": "OK",
+    "preferences_reset": "Reset Preferences",
+    "preferences_reset_confirm": "Reset all settings to defaults? This cannot be undone.",
+    "preferences_reset_done": "All preferences have been reset to defaults.",
+    "preferences_applied": "Preferences Saved",
+    "preferences_applied_msg": "Your changes have been saved.",
+
+    # Theme
+    "theme_light": "Light",
+    "theme_dark": "Dark",
+    "theme_system": "System",
+    "theme_label": "Theme:",
+    "theme_help": "Switch between light, dark, or system-adaptive theme.",
+    "theme_picker_help": "Choose theme from available options.",
+
+    # Section header for Preferences dialogs
+    "preferences_theme": "Theme Settings",
+
+    # UI Scale
+    "ui_scale": "UI Scale:",
+    "ui_scale_help": "Adjust interface scaling for high-DPI displays. 1.0 = 100%.",
+    "preferences_ui_scale": "UI Scale",
+
+    # Accent color
+    "accent_color": "Accent color",
+    "accent_color_help": "Customize the accent color for buttons, links, and highlights.",
+    "color_picker_title": "Choose Accent Color",
+    "preferences_accent": "Accent Color",
+
+    # Window management
+    "preferences_window_section": "Window Management",
+    "prefs_remember_window": "Remember window size & position",
+    "prefs_confirm_exit": "Confirm on exit",
+    "window_management_help": "Control how the application handles window state and behavior.",
+    "prefs_tooltip_delay": "Tooltip delay (ms):",
+    "tooltip_delay_help": "Delay before tooltips appear (in milliseconds).",
+
+    # Auto-save section
+    "preferences_auto_save_section": "Auto-save Settings",
+    "prefs_auto_save": "Auto-save config on change",
+    "prefs_auto_save_help": "Automatically save configuration changes when they occur.",
+
+    # Shortcuts section
+    "preferences_main_shortcuts": "Keyboard Shortcuts",
+
+    # Font picker enhancements
+    "font_favorites": "Favorites",
+    "font_recent": "Recently Used",
+    "font_preview": "Preview:",
+    "font_preview_text_arabic": "مرحبا بالعالم",
+    "font_size_label": "Font size",
+    "add_to_favorites": "Add to favorites",
+    "remove_from_favorites": "Remove from favorites",
+
+    # Color picker enhancements
+    "color_favorites": "Color favorites",
+    "color_contrast_warning": "Contrast warning",
+    "color_contrast_insufficient": "Low contrast - text may be hard to read",
+    "color_contrast_acceptable": "Contrast OK",
+
+    # Reset per section
+    "reset_section": "Reset",
+    "section_modified": "● Modified",
 }
 
 _current_lang = "en"

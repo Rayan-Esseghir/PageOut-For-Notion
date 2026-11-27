@@ -1163,3 +1163,7 @@ def main():
         raise SystemExit("Tkinter is not available in this Python installation.")
     _windows_integration()
     App().run()
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -407,6 +407,50 @@ class UIScaleSelector(ttk.Frame):
             self.on_change(scale_val)
 
 
+class ColorPicker(ttk.Frame):
+    """Enhanced color picker widget with color history and favorites."""
+
+    def __init__(self, parent, variable: tk.Variable, on_pick: Optional[Callable] = None, **kwargs):
+        super().__init__(parent, **kwargs)
+        self.variable = variable
+        self.on_pick = on_pick
+        self._favorites = ["#37352f", "#2563eb", "#16a34a", "#dc2626", "#d97706", "#7c3aed"]
+        self._build()
+
+    def _build(self):
+        """Build the color picker UI."""
+        # Current color display
+        ttk.Label(self, text=_("accent_color") + ":").pack(side="left", padx=(0, 8))
+        self.color_label = ttk.Label(self, text="", width=4, relief="solid", borderwidth=1, bg=self.variable.get())
+        self.color_label.pack(side="left", padx=(0, 8))
+
+        # Pick button
+        ttk.Button(self, text="🎨", width=2, command=self._pick_color).pack(side="left", padx=(0, 8))
+
+        # Current value display
+        self.value_label = ttk.Label(self, text=self.variable.get(), foreground="#6b7280")
+        self.value_label.pack(side="left")
+
+        self.variable.trace_add("write", self._update_display)
+
+    def _update_display(self, *_):
+        """Update the color display."""
+        try:
+            color = self.variable.get()
+            self.color_label.config(bg=color)
+            self.value_label.config(text=color, foreground="#6b7280")
+        except Exception:
+            pass
+
+    def _pick_color(self):
+        """Open color chooser dialog."""
+        color = tk.colorchooser.askcolor(self.variable.get(), self.master, _("color_picker_title"))
+        if color[1]:
+            self.variable.set(color[1])
+            if self.on_pick:
+                self.on_pick(color[1])
+
+
 class ModeToggle(ttk.Frame):
     """Simple/Advanced mode toggle widget."""
 

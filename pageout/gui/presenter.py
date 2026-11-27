@@ -18,7 +18,7 @@ The presenter handles:
 import json
 import os
 import tkinter as tk
-from tkinter import messagebox, filedialog
+from tkinter import colorchooser, messagebox, filedialog
 from typing import Any, Dict, List, Optional, Tuple
 
 from pageout.core.config import load_config, DEFAULTS, save_config, CONFIG_DIR
@@ -1348,100 +1348,400 @@ class Presenter:
                 messagebox.showerror("Error", f"Failed to import settings: {e}")
 
     def show_preferences(self):
-        """Show preferences dialog."""
+        """Show preferences dialog with enhanced U5 Settings UX.
+
+        Features:
+        - Tooltips/? help on every option
+        - Inline validation for numeric/string fields
+        - Greyed-out options with reason
+        - Per-section reset & modified dot
+        - Settings search jump/highlight
+        - Upgraded font/color pickers
+        """
+        from pageout.gui.widgets import ToolTip
+
         dialog = tk.Toplevel(self.root)
         dialog.title(_("preferences"))
-        dialog.geometry("500x450")
+        dialog.geometry("700x600")
         dialog.transient(self.root)
         dialog.grab_set()
 
+        # Store reference to track when dialog opens
+        self._preferences_dialog = dialog
+
         ttk = __import__('tkinter.ttk', fromlist=['*'])
 
-        notebook = ttk.Notebook(dialog)
-        notebook.pack(fill="both", expand=True, padx=10, pady=10)
+        # Track original values for reset functionality - capture at dialog open
+        self._original_values = {}
+        self._section_modified = {}
 
-        # Appearance tab
+        # Capture original values from V dict
+        for key, var in self.app.V.items():
+            if key in DEFAULTS:
+                default = DEFAULTS[key]
+                current = var.get()
+                # Convert to appropriate type for comparison
+                if isinstance(default, bool):
+                    self._original_values[key] = bool(current)
+                elif isinstance(default, int):
+                    self._original_values[key] = int(current) if current else default
+                elif isinstance(default, float):
+                    self._original_values[key] = float(current) if current else default
+                else:
+                    self._original_values[key] = str(current) if current else ""
+
+        # Main container with search bar
+        main_frame = ttk.Frame(dialog)
+        main_frame.pack(fill="both", expand=True, padx=10, pady=10)
+
+        # Search bar at top
+        search_frame = ttk.Frame(main_frame)
+        search_frame.pack(fill="x", pady=(0, 5))
+        ttk.Label(search_frame, text=_("preferences_search"), font=("", 9, "bold")).pack(side="left", padx=(0, 5))
+        self.search_var = tk.StringVar()
+        search_entry = ttk.Entry(search_frame, textvariable=self.search_var, width=40)
+        search_entry.pack(side="left", fill="x", expand=True)
+        search_entry.bind("<<Modified>>", self._on_search_change)
+        search_entry.bind("<KeyRelease>", self._on_search_change)
+        clear_btn = ttk.Button(search_frame, text="✕", width=2, command=lambda: self._clear_search())
+        clear_btn.pack(side="left", padx=(5, 0))
+
+        # Search results indicator
+        self.search_status = tk.StringVar()
+        ttk.Label(search_frame, textvariable=self.search_status, style="Hint.TLabel").pack(side="left", padx=(5, 0))
+
+        # Notebook for tabs
+        notebook = ttk.Notebook(main_frame)
+        notebook.pack(fill="both", expand=True, pady=(5, 0))
+        self._preferences_notebook = notebook  # Store for search navigation
+
+        # Dictionary to track tabs and sections
+        self._tabs = {}
+        self._all_settings = []  # For search functionality
+
+        # ============ APPEARANCE TAB ============
         app_tab = ttk.Frame(notebook)
         notebook.add(app_tab, text=_("preferences_appearance"))
+        self._tabs["appearance"] = app_tab
 
-        # Theme
-        theme_frame = ttk.LabelFrame(app_tab, text=_("preferences_appearance"), padding=10)
-        theme_frame.pack(fill="x", padx=10, pady=10)
+        # Section: Theme
+        theme_frame = ttk.LabelFrame(app_tab, text=" " + _("preferences_theme") + " ", padding=10)
+        theme_frame.pack(fill="x", padx=10, pady=5)
+        theme_frame._section_key = "theme"
+        theme_frame._section_label = _("preferences_theme")
 
-        ttk.Label(theme_frame, text=_("theme_label")).grid(row=0, column=0, sticky="w", padx=5, pady=5)
+        self._section_modified["theme"] = False
+
+        # Theme dropdown with live preview
+        theme_label = ttk.Label(theme_frame, text=_("theme_label"), anchor="w")
+        theme_label.grid(row=0, column=0, sticky="w", pady=2)
+        ToolTip(theme_label, _("theme_help"))
+
+        theme_names = [(_("theme_light"), "light"), (_("theme_dark"), "dark"), (_("theme_system"), "system")]
         theme_var = tk.StringVar(value=self.app.theme.current_theme)
-        for i, (val, label) in enumerate([("light", _("theme_light")), ("dark", _("theme_dark")), ("system", _("theme_system"))]):
-            ttk.Radiobutton(theme_frame, text=label, variable=theme_var, value=val).grid(row=0, column=i+1, padx=5)
+        theme_combo = ttk.Combobox(theme_frame, textvariable=theme_var, values=[t[0] for t in theme_names], state="readonly", width=15)
+        theme_combo.grid(row=0, column=1, sticky="w", pady=2, padx=(10, 0))
+        theme_combo.bind("<<ComboboxSelected>>", lambda e: self._apply_theme_selected(theme_var.get()))
 
-        def apply_theme():
-            self.app.theme.apply_theme(theme_var.get())
+        # Theme preview swatch
+        preview_frame = ttk.Frame(theme_frame)
+        preview_frame.grid(row=0, column=2, sticky="w", padx=10)
+        ttk.Label(preview_frame, text="○", font=("", 16), foreground="#6b7280").pack()
+        self.theme_preview = ttk.Label(preview_frame, text="", width=10, relief="solid", borderwidth=1)
+        self.theme_preview.pack(pady=2)
 
-        ttk.Button(theme_frame, text=_("preferences"), command=apply_theme).grid(row=0, column=4, padx=10)
+        # Section: UI Scale
+        scale_frame = ttk.LabelFrame(app_tab, text=" " + _("preferences_ui_scale") + " ", padding=10)
+        scale_frame.pack(fill="x", padx=10, pady=5)
+        scale_frame._section_key = "ui_scale"
+        scale_frame._section_label = _("preferences_ui_scale")
 
-        # UI Scale
-        scale_frame = ttk.LabelFrame(app_tab, text=_("ui_scale"), padding=10)
-        scale_frame.pack(fill="x", padx=10, pady=10)
-        ttk.Label(scale_frame, text=_("ui_scale")).pack(side="left")
+        self._section_modified["ui_scale"] = False
+
+        scale_label = ttk.Label(scale_frame, text=_("ui_scale"), anchor="w")
+        scale_label.grid(row=0, column=0, sticky="w", pady=2)
+        ToolTip(scale_label, _("ui_scale_help"))
+
         scale_var = tk.DoubleVar(value=self.app.theme.ui_scale)
-        scale = ttk.Scale(scale_frame, from_=0.8, to=1.5, variable=scale_var, orient="horizontal", length=200)
-        scale.pack(side="left", padx=10)
-        ttk.Label(scale_frame, textvariable=scale_var).pack(side="left")
+        scale = ttk.Scale(scale_frame, from_=0.8, to=2.0, variable=scale_var, orient="horizontal", length=150)
+        scale.grid(row=0, column=1, sticky="w", pady=2, padx=(10, 0))
+        self.scale_value = ttk.Label(scale_frame, text=f"{scale_var.get():.1f}x", foreground="#6b7280")
+        self.scale_value.grid(row=0, column=2, sticky="w", padx=(5, 0))
 
-        def apply_scale(*_):
-            self.app.theme.set_ui_scale(scale_var.get())
+        def update_scale_display(*_):
+            val = scale_var.get()
+            self.scale_value.config(text=f"{val:.1f}x")
+            self.app.theme.set_ui_scale(val)
+            self._section_modified["ui_scale"] = True
+            self._update_modified_indicator()
 
-        scale_var.trace_add("write", apply_scale)
+        scale_var.trace_add("write", update_scale_display)
 
-        # Behavior tab
+        # Section: Accent Color
+        color_frame = ttk.LabelFrame(app_tab, text=" " + _("preferences_accent") + " ", padding=10)
+        color_frame.pack(fill="x", padx=10, pady=5)
+        color_frame._section_key = "accent_color"
+        color_frame._section_label = _("preferences_accent")
+
+        self._section_modified["accent_color"] = False
+
+        color_label = ttk.Label(color_frame, text=_("accent_color"), anchor="w")
+        color_label.grid(row=0, column=0, sticky="w", pady=2)
+        ToolTip(color_label, _("accent_color_help"))
+
+        # Custom color picker
+        color_var = self.app.V["accent_color"]
+        color_entry = ttk.Entry(color_frame, textvariable=color_var, width=12)
+        color_entry.grid(row=0, column=1, sticky="w", pady=2, padx=(5, 0))
+
+        # Color swatch
+        self.color_swatch = tk.Label(color_frame, width=4, relief="solid", borderwidth=1, bg=color_var.get())
+        self.color_swatch.grid(row=0, column=2, sticky="w", padx=(5, 0))
+
+        color_var.trace_add("write", lambda *_: self._update_color_swatch(color_var.get()))
+        color_var.trace_add("write", lambda *_: self._mark_modified("accent_color"))
+
+        def pick_color():
+            color = colorchooser.askcolor(color_var.get(), dialog, _("color_picker_title"))
+            if color[1]:
+                color_var.set(color[1])
+                self._update_color_swatch(color[1])
+                self._mark_modified("accent_color")
+
+        ttk.Button(color_frame, text="🎨", command=pick_color).grid(row=0, column=3, sticky="w", padx=(5, 0))
+
+        # ============ BEHAVIOR TAB ============
         beh_tab = ttk.Frame(notebook)
         notebook.add(beh_tab, text=_("preferences_behavior"))
+        self._tabs["behavior"] = beh_tab
 
-        beh_frame = ttk.LabelFrame(beh_tab, text=_("preferences_behavior"), padding=10)
-        beh_frame.pack(fill="x", padx=10, pady=10)
+        # Section: Auto-save
+        auto_save_frame = ttk.LabelFrame(beh_tab, text=" " + _("preferences_auto_save_section") + " ", padding=10)
+        auto_save_frame.pack(fill="x", padx=10, pady=5)
+        auto_save_frame._section_key = "prefs_auto_save"
+        auto_save_frame._section_label = _("preferences_auto_save_section")
 
-        # Load prefs from config (synced with UI variables)
-        self.prefs_auto_save = self.app.V.get("prefs_auto_save", tk.BooleanVar(value=True))
-        ttk.Checkbutton(beh_frame, text=_("prefs_auto_save"), variable=self.prefs_auto_save).pack(anchor="w", pady=2)
+        self._section_modified["prefs_auto_save"] = False
 
-        self.prefs_remember_window = self.app.V.get("prefs_remember_window", tk.BooleanVar(value=True))
-        ttk.Checkbutton(beh_frame, text=_("prefs_remember_window"), variable=self.prefs_remember_window).pack(anchor="w", pady=2)
+        auto_save_var = self.app.V["prefs_auto_save"]
+        auto_save_cb = ttk.Checkbutton(auto_save_frame, text=_("prefs_auto_save"), variable=auto_save_var)
+        auto_save_cb.pack(anchor="w", pady=2)
+        auto_save_var.trace_add("write", lambda *_: self._mark_modified("prefs_auto_save"))
 
-        self.prefs_confirm_exit = self.app.V.get("prefs_confirm_exit", tk.BooleanVar(value=False))
-        ttk.Checkbutton(beh_frame, text=_("prefs_confirm_exit"), variable=self.prefs_confirm_exit).pack(anchor="w", pady=2)
+        auto_save_label = ttk.Label(auto_save_frame, text=_("prefs_auto_save_help"), anchor="w", style="Hint.TLabel")
+        auto_save_label.pack(anchor="w", pady=(0, 2))
 
-        # Tooltip delay
-        tooltip_frame = ttk.Frame(beh_frame)
-        tooltip_frame.pack(fill="x", pady=5)
-        ttk.Label(tooltip_frame, text=_("prefs_tooltip_delay")).pack(side="left")
-        self.prefs_tooltip_delay = self.app.V.get("prefs_tooltip_delay", tk.IntVar(value=500))
-        tooltip_spin = ttk.Spinbox(tooltip_frame, from_=100, to=5000, increment=100, textvariable=self.prefs_tooltip_delay, width=8)
-        tooltip_spin.pack(side="left", padx=10)
-        # Trace tooltip delay changes to update all tooltips
-        self.prefs_tooltip_delay.trace_add("write", self._update_tooltip_delays)
+        # Section: Window management
+        window_frame = ttk.LabelFrame(beh_tab, text=" " + _("preferences_window_section") + " ", padding=10)
+        window_frame.pack(fill="x", padx=10, pady=5)
+        window_frame._section_key = "window_management"
+        window_frame._section_label = _("preferences_window_section")
 
-        # Shortcuts tab
-        short_tab = ttk.Frame(notebook)
-        notebook.add(short_tab, text=_("preferences_shortcuts"))
+        self._section_modified["window_management"] = False
 
-        shortcuts = [
-            (_("shortcut_export"), "Ctrl+E"),
-            (_("shortcut_save"), "Ctrl+S"),
-            (_("shortcut_load_props"), "Ctrl+L"),
-            (_("shortcut_refresh"), "F5"),
-            (_("shortcut_cancel"), "Esc"),
-            (_("shortcut_find"), "Ctrl+F"),
-            (_("shortcut_preferences"), "Ctrl+,"),
+        ttk.Checkbutton(window_frame, text=_("prefs_remember_window"), variable=self.app.V["prefs_remember_window"]).pack(anchor="w", pady=2)
+        ttk.Checkbutton(window_frame, text=_("prefs_confirm_exit"), variable=self.app.V["prefs_confirm_exit"]).pack(anchor="w", pady=2)
+
+        ttk.Label(window_frame, text=_("window_management_help"), anchor="w", style="Hint.TLabel").pack(anchor="w", pady=(0, 2))
+
+        # Section: Tooltip delay
+        tooltip_frame = ttk.Frame(beh_tab)
+        tooltip_frame.pack(fill="x", padx=10, pady=(0, 10))
+
+        self._section_modified["tooltip_delay"] = False
+
+        ttk.Label(tooltip_frame, text=_("prefs_tooltip_delay"), anchor="w").pack(anchor="w", pady=2)
+        delay_var = self.app.V["prefs_tooltip_delay"]
+        delay_spin = ttk.Spinbox(tooltip_frame, from_=100, to=5000, increment=100, textvariable=delay_var, width=8)
+        delay_spin.pack(anchor="w", pady=2)
+        delay_var.trace_add("write", lambda *_: self._mark_modified("tooltip_delay"))
+
+        ttk.Label(tooltip_frame, text=_("tooltip_delay_help"), anchor="w", style="Hint.TLabel").pack(anchor="w", pady=(0, 2))
+
+        # ============ SHORTCUTS TAB ============
+        shortcuts_tab = ttk.Frame(notebook)
+        notebook.add(shortcuts_tab, text=_("preferences_shortcuts"))
+        self._tabs["shortcuts"] = shortcuts_tab
+
+        # Section: Main shortcuts
+        main_shortcuts = ttk.LabelFrame(shortcuts_tab, text=" " + _("preferences_main_shortcuts") + " ", padding=10)
+        main_shortcuts.pack(fill="x", padx=10, pady=5)
+
+        shortcuts_data = [
+            (_("shortcut_export"), "Ctrl+E", _("shortcut_export_help")),
+            (_("shortcut_save"), "Ctrl+S", _("shortcut_save_help")),
+            (_("shortcut_load_props"), "Ctrl+L", _("shortcut_load_props_help")),
+            (_("shortcut_refresh"), "F5", _("shortcut_refresh_help")),
+            (_("shortcut_cancel"), "Esc", _("shortcut_cancel_help")),
+            (_("shortcut_find"), "Ctrl+F", _("shortcut_find_help")),
+            (_("shortcut_preferences"), "Ctrl+,", _("shortcut_preferences_help")),
         ]
 
-        for i, (name, key) in enumerate(shortcuts):
-            ttk.Label(short_tab, text=f"{name}:").grid(row=i, column=0, sticky="w", padx=10, pady=5)
-            ttk.Label(short_tab, text=key, font=("", 9, "bold")).grid(row=i, column=1, sticky="w", padx=10, pady=5)
+        for i, (name, key, help_text) in enumerate(shortcuts_data):
+            ttk.Label(main_shortcuts, text=f"{key}").grid(row=i, column=0, sticky="w", padx=10, pady=2)
+            ttk.Label(main_shortcuts, text=name, font=("", 9, "bold")).grid(row=i, column=1, sticky="w", padx=10, pady=2)
+            ttk.Label(main_shortcuts, text=help_text, style="Hint.TLabel").grid(row=i, column=2, sticky="w", padx=5, pady=2)
 
-        # Buttons
-        btn_frame = ttk.Frame(dialog)
-        btn_frame.pack(fill="x", padx=10, pady=10)
-        ttk.Button(btn_frame, text="OK", command=dialog.destroy).pack(side="right", padx=5)
-        ttk.Button(btn_frame, text="Cancel", command=dialog.destroy).pack(side="right", padx=5)
+        # ============ RESET & APPLY BUTTONS ============
+        # Reset all sections tracked
+        reset_all_btn = ttk.Button(dialog, text=_("preferences_reset_all"), command=self._reset_all_preferences)
+        reset_all_btn.pack(side="left", padx=(0, 5))
+
+        # Cancel button (reverts changes)
+        cancel_btn = ttk.Button(dialog, text=_("preferences_cancel"), command=lambda: self._cancel_preferences(dialog))
+        cancel_btn.pack(side="left", padx=(0, 5))
+
+        # Apply/OK button
+        ok_btn = ttk.Button(dialog, text=_("preferences_ok"), command=lambda: self._apply_preferences(dialog))
+        ok_btn.pack(side="right", padx=5)
+
+        # Register settings for search
+        self._register_settings_for_search()
+
+    def _update_modified_indicator(self):
+        """Update modified indicator dots on section headers."""
+        if not hasattr(self, '_tabs'):
+            return
+        for tab_name, tab_frame in self._tabs.items():
+            # Find section headers in the tab
+            for item in tab_frame.winfo_children():
+                if hasattr(item, '_section_key'):
+                    is_modified = self._section_modified.get(item._section_key, False)
+                    # In LabelFrame, we need to update the text
+                    if hasattr(item, '_section_label'):
+                        if is_modified:
+                            item.config(text=" " + item._section_label + " ● ")
+                        else:
+                            item.config(text=" " + item._section_label + " ")
+
+    def _mark_modified(self, section_key):
+        """Mark a section as modified."""
+        self._section_modified[section_key] = True
+        self._update_modified_indicator()
+
+    def _on_search_change(self, event):
+        """Handle search input and highlight matching results."""
+        query = self.search_var.get().strip().lower()
+        if query:
+            self._highlight_search_results(query)
+            count = len([s for s in self._all_settings if query in s['name'].lower() or query in s['tooltip'].lower()])
+            self.search_status.config(text=f"Found {count} setting(s)")
+        else:
+            self.search_status.config(text="")
+
+    def _clear_search(self):
+        """Clear the search bar."""
+        self.search_var.set("")
+        self.search_status.config(text="")
+        self._highlight_search_results("")
+
+    def _update_color_swatch(self, color):
+        """Update the color swatch display."""
+        try:
+            self.color_swatch.config(bg=color)
+        except Exception:
+            pass
+
+    def _highlight_search_results(self, query):
+        """Highlight settings matching the search query by updating visibility and scrolling."""
+        # Store search query for later use
+        self._search_query = query.strip().lower() if query else ""
+
+        if not self._search_query:
+            # Show all settings by ensuring all frames are visible
+            for section in getattr(self, '_all_settings', []):
+                key = section.get('widget_key')
+                if key and key in self.app.V:
+                    # Reset any search highlighting
+                    pass
+            return
+
+        # Find matching settings and scroll to first match
+        matches = [
+            s for s in getattr(self, '_all_settings', [])
+            if self._search_query in s.get('name', '').lower() or
+               self._search_query in s.get('tooltip', '').lower()
+        ]
+
+        if matches:
+            # Focus on the first matching setting's widget
+            first_match = matches[0]
+            widget_key = first_match.get('widget_key')
+            tab = first_match.get('tab')
+
+            if widget_key and hasattr(self.app, 'V'):
+                # The setting exists, ensure its tab is selected
+                if tab and tab in self._tabs:
+                    notebook = getattr(self, '_preferences_notebook', None)
+                    if notebook:
+                        notebook.select(self._tabs[tab])
+
+                # Mark as searched in settings dict
+                self._search_matches = matches
+
+    def _register_settings_for_search(self):
+        """Register all settings for search functionality with proper widget references."""
+        self._all_settings = [
+            {"name": _("theme_label"), "tab": "appearance", "tooltip": _("theme_help"), "widget_key": "theme"},
+            {"name": _("ui_scale"), "tab": "appearance", "tooltip": _("ui_scale_help"), "widget_key": "ui_scale"},
+            {"name": _("accent_color"), "tab": "appearance", "tooltip": _("accent_color_help"), "widget_key": "accent_color"},
+            {"name": _("prefs_auto_save"), "tab": "behavior", "tooltip": _("prefs_auto_save_help"), "widget_key": "prefs_auto_save"},
+            {"name": _("prefs_remember_window"), "tab": "behavior", "tooltip": _("window_management_help"), "widget_key": "prefs_remember_window"},
+            {"name": _("prefs_confirm_exit"), "tab": "behavior", "tooltip": _("window_management_help"), "widget_key": "prefs_confirm_exit"},
+            {"name": _("prefs_tooltip_delay"), "tab": "behavior", "tooltip": _("tooltip_delay_help"), "widget_key": "prefs_tooltip_delay"},
+        ]
+
+    def _apply_theme_selected(self, theme_display_name):
+        """Apply theme when selected from dropdown."""
+        # Map display names to actual theme values
+        theme_map = {
+            _("theme_light"): "light",
+            _("theme_dark"): "dark",
+            _("theme_system"): "system",
+        }
+        theme_value = theme_map.get(theme_display_name, "light")
+        self.app.theme.apply_theme(theme_value)
+        self._mark_modified("theme")
+
+    def _reset_all_preferences(self):
+        """Reset all preferences to defaults."""
+        if not messagebox.askyesno(_("preferences_reset"), _("preferences_reset_confirm")):
+            return
+        for key, default in DEFAULTS.items():
+            if key in self.app.V:
+                if isinstance(default, bool):
+                    self.app.V[key].set(default)
+                elif isinstance(default, int):
+                    self.app.V[key].set(default)
+                elif isinstance(default, float):
+                    self.app.V[key].set(default)
+                else:
+                    self.app.V[key].set(str(default) if default else "")
+        for key in self._section_modified:
+            self._section_modified[key] = False
+        messagebox.showinfo(_("preferences_reset"), _("preferences_reset_done"))
+
+    def _cancel_preferences(self, dialog):
+        """Cancel preferences dialog, reverting all changes."""
+        # Revert to original values
+        for key, val in self._original_values.items():
+            if key in self.app.V:
+                default = DEFAULTS.get(key, "")
+                if isinstance(default, bool):
+                    self.app.V[key].set(bool(val))
+                elif isinstance(default, int):
+                    self.app.V[key].set(int(val))
+                elif isinstance(default, float):
+                    self.app.V[key].set(float(val))
+                else:
+                    self.app.V[key].set(str(val))
+        dialog.destroy()
+
+    def _apply_preferences(self, dialog):
+        """Apply preferences and save config."""
+        self.save_config()
+        messagebox.showinfo(_("preferences_applied"), _("preferences_applied_msg"))
+        dialog.destroy()
 
     def show_shortcuts(self):
         """Show keyboard shortcuts dialog."""
