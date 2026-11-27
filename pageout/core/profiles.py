@@ -117,6 +117,8 @@ def merge_profile_into_config(profile_data: Dict, cfg: Dict) -> Dict:
                 cfg[key] = int(val)
             elif isinstance(default, float):
                 cfg[key] = float(val)
+            elif isinstance(default, list):
+                cfg[key] = list(val) if val is not None else []
             else:
                 cfg[key] = str(val)
     return cfg
