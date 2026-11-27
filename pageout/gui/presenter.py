@@ -35,6 +35,11 @@ from pageout.core.sources import (
     get_recent_sources, extract_id_from_url, source_exists
 )
 from pageout.core.queue import ExportQueue, ExportJob, JobStatus, JobPriority
+from pageout.core.scheduler import (
+    add_schedule, remove_schedule, list_schedules, get_schedule,
+    ScheduledTask, ScheduleStatus, register_schedule, unregister_schedule,
+    get_scheduled_tasks, enable_schedule, disable_schedule
+)
 from pageout.gui.i18n import EN, get_string, _
 
 
@@ -407,6 +412,260 @@ class Presenter:
             self.app.refresh_queue_display()
 
         messagebox.showinfo("Added to Queue", f"Job '{name}' added to export queue.\nID: {job_id}")
+
+    def show_schedule(self):
+        """Show the scheduled exports dialog."""
+        dialog = tk.Toplevel(self.root)
+        dialog.title(_("schedule_title"))
+        dialog.geometry("800x500")
+        dialog.transient(self.root)
+        dialog.grab_set()
+
+        ttk = __import__('tkinter.ttk', fromlist=['*'])
+
+        # Toolbar
+        toolbar = ttk.Frame(dialog)
+        toolbar.pack(fill="x", padx=10, pady=5)
+
+        ttk.Button(toolbar, text=_("schedule_add_button"), command=lambda: self._show_add_schedule_dialog(dialog)).pack(side="left", padx=5)
+        ttk.Button(toolbar, text=_("schedule_refresh"), command=lambda: self._refresh_schedule_tree()).pack(side="left", padx=5)
+        ttk.Button(toolbar, text=_("schedule_close"), command=dialog.destroy).pack(side="right", padx=5)
+
+        # Treeview for schedules
+        columns = ("id", "name", "source", "format", "schedule", "status", "last_run")
+        self.app.schedule_tree = ttk.Treeview(dialog, columns=columns, show="headings", height=15)
+        self.app.schedule_tree.heading("id", text=_("schedule_column_id"))
+        self.app.schedule_tree.heading("name", text=_("schedule_column_name"))
+        self.app.schedule_tree.heading("source", text=_("schedule_column_source"))
+        self.app.schedule_tree.heading("format", text=_("schedule_column_format"))
+        self.app.schedule_tree.heading("schedule", text=_("schedule_column_schedule"))
+        self.app.schedule_tree.heading("status", text=_("schedule_column_status"))
+        self.app.schedule_tree.heading("last_run", text=_("schedule_column_last_run"))
+        self.app.schedule_tree.column("id", width=70)
+        self.app.schedule_tree.column("name", width=150)
+        self.app.schedule_tree.column("source", width=150)
+        self.app.schedule_tree.column("format", width=100)
+        self.app.schedule_tree.column("schedule", width=120)
+        self.app.schedule_tree.column("status", width=80)
+        self.app.schedule_tree.column("last_run", width=100)
+        self.app.schedule_tree.pack(fill="both", expand=True, padx=10, pady=5)
+
+        # Scrollbar
+        vsb = ttk.Scrollbar(self.app.schedule_tree, orient="vertical", command=self.app.schedule_tree.yview)
+        self.app.schedule_tree.configure(yscrollcommand=vsb.set)
+        vsb.pack(side="right", fill="y")
+
+        # Bind double-click to show details
+        self.app.schedule_tree.bind("<Double-1>", lambda e: self._show_schedule_details(dialog))
+
+        # Action buttons frame
+        action_frame = ttk.Frame(dialog)
+        action_frame.pack(fill="x", padx=10, pady=5)
+
+        ttk.Button(action_frame, text=_("schedule_action_enable"), command=lambda: self._schedule_toggle_status(dialog)).pack(side="left", padx=5)
+        ttk.Button(action_frame, text=_("schedule_action_disable"), command=lambda: self._schedule_toggle_status(dialog)).pack(side="left", padx=5)
+        ttk.Button(action_frame, text=_("schedule_action_edit"), command=lambda: self._show_add_schedule_dialog(dialog)).pack(side="left", padx=5)
+        ttk.Button(action_frame, text=_("schedule_action_remove"), command=lambda: self._schedule_remove(dialog)).pack(side="left", padx=5)
+
+        # Initial load
+        self._refresh_schedule_tree()
+
+    def _refresh_schedule_tree(self):
+        """Refresh the schedule treeview."""
+        tree = getattr(self.app, 'schedule_tree', None)
+        if not tree:
+            return
+
+        # Clear
+        for item in tree.get_children():
+            tree.delete(item)
+
+        # Populate
+        schedules = list_schedules()
+        if not schedules:
+            # Show message if no schedules
+            tree.insert("", "end", values=("", _("no_schedules"), "", "", "", "", ""))
+            return
+
+        for s in schedules:
+            formats_str = ", ".join(s.formats) if s.formats else "md"
+            tree.insert("", "end", values=(
+                s.id,
+                s.name,
+                s.source[:40] + "..." if len(s.source) > 40 else s.source,
+                formats_str,
+                s.schedule,
+                s.status.value,
+                s.last_run or "never",
+            ))
+
+    def _show_add_schedule_dialog(self, parent=None):
+        """Show dialog to add or edit a schedule."""
+        dialog = tk.Toplevel(self.root)
+        dialog.title(_("schedule_add_button") if not hasattr(self, '_edit_schedule_mode') or not self._edit_schedule_mode else _("schedule_action_edit"))
+        dialog.transient(self.root)
+        dialog.grab_set()
+        dialog.geometry("500x450")
+
+        ttk = __import__('tkinter.ttk', fromlist=['*'])
+
+        # Form fields
+        ttk.Label(dialog, text=_("schedule_name_label")).pack(anchor="w", padx=15, pady=(10, 2))
+        name_var = tk.StringVar()
+        if hasattr(self, '_edit_schedule_mode') and self._edit_schedule_mode:
+            name_var.set(self._edit_schedule_name)
+        ttk.Entry(dialog, textvariable=name_var, width=50).pack(fill="x", padx=15, pady=5)
+
+        ttk.Label(dialog, text=_("schedule_source_label")).pack(anchor="w", padx=15, pady=(10, 2))
+        source_var = tk.StringVar()
+        ttk.Entry(dialog, textvariable=source_var, width=50).pack(fill="x", padx=15, pady=5)
+
+        ttk.Label(dialog, text=_("schedule_output_label")).pack(anchor="w", padx=15, pady=(10, 2))
+        output_var = tk.StringVar()
+        output_entry = ttk.Entry(dialog, textvariable=output_var, width=50)
+        output_entry.pack(fill="x", padx=15, pady=5)
+        ttk.Button(dialog, text="Browse…", command=lambda: self._browse_schedule_output(output_var)).pack(anchor="w", padx=15, pady=(0, 10))
+
+        ttk.Label(dialog, text=_("schedule_formats_label")).pack(anchor="w", padx=15, pady=(10, 2))
+        formats_var = tk.StringVar(value="md,pdf")
+        ttk.Entry(dialog, textvariable=formats_var, width=50).pack(fill="x", padx=15, pady=5)
+
+        ttk.Label(dialog, text=_("schedule_schedule_label")).pack(anchor="w", padx=15, pady=(10, 2))
+        schedule_var = tk.StringVar(value="daily")
+        ttk.Entry(dialog, textvariable=schedule_var, width=50).pack(fill="x", padx=15, pady=5)
+
+        # Preview
+        preview_frame = ttk.LabelFrame(dialog, text=" " + _("schedule_preview") + " ", padding=10)
+        preview_frame.pack(fill="x", padx=15, pady=10)
+        preview_label = ttk.Label(preview_frame, text="", foreground="#6b7280")
+        preview_label.pack(anchor="w")
+
+        def update_preview(*args):
+            name = name_var.get()
+            source = source_var.get()
+            out = output_var.get()
+            fmt = formats_var.get()
+            sched = schedule_var.get()
+            preview_label.config(text=f"Will export '{fmt}' to '{out}' {sched} from {source[:30]}{'...' if len(source) > 30 else ''} (schedule: {sched})")
+
+        name_var.trace_add("write", update_preview)
+        source_var.trace_add("write", update_preview)
+        schedule_var.trace_add("write", update_preview)
+
+        # Buttons
+        btn_frame = ttk.Frame(dialog)
+        btn_frame.pack(pady=15)
+
+        def save_and_close():
+            try:
+                if hasattr(self, '_edit_schedule_mode') and self._edit_schedule_mode:
+                    # Edit mode - use existing ID
+                    task_id = add_schedule(
+                        name=name_var.get(),
+                        source=source_var.get(),
+                        output_dir=output_var.get(),
+                        formats=[f.strip() for f in formats_var.get().split(",")],
+                        schedule=schedule_var.get(),
+                    )
+                else:
+                    # Add mode
+                    task_id = add_schedule(
+                        name=name_var.get(),
+                        source=source_var.get(),
+                        output_dir=output_var.get(),
+                        formats=[f.strip() for f in formats_var.get().split(",")],
+                        schedule=schedule_var.get(),
+                    )
+                messagebox.showinfo("Schedule Added", _("schedule_added"))
+                dialog.destroy()
+                self._refresh_schedule_tree()
+            except Exception as e:
+                messagebox.showerror("Error", str(e))
+
+        ttk.Button(btn_frame, text=_("schedule_save"), command=save_and_close).pack(side="left", padx=5)
+        ttk.Button(btn_frame, text=_("schedule_cancel"), command=dialog.destroy).pack(side="left", padx=5)
+
+        dialog.wait_window()
+
+    def _browse_schedule_output(self, var):
+        """Browse for output directory."""
+        from tkinter import filedialog
+        folder = filedialog.askdirectory()
+        if folder:
+            var.set(folder)
+
+    def _show_schedule_details(self, parent=None):
+        """Show details for a selected schedule."""
+        tree = getattr(self.app, 'schedule_tree', None)
+        if not tree:
+            return
+        selection = tree.selection()
+        if not selection:
+            return
+        item = tree.item(selection[0])
+        task_id = item["values"][0]
+        if not task_id:
+            return
+        task = get_schedule(task_id)
+        if not task:
+            return
+
+        # Show details in messagebox
+        details = [
+            f"Name: {task.name}",
+            f"ID: {task.id}",
+            f"Source: {task.source}",
+            f"Output: {task.output_dir}",
+            f"Formats: {', '.join(task.formats)}",
+            f"Schedule: {task.schedule}",
+            f"Status: {task.status.value}",
+            f"Last Run: {task.last_run or 'never'}",
+            f"Log File: {task.log_file}",
+        ]
+        messagebox.showinfo("Schedule Details", "\n".join(details))
+
+    def _schedule_remove(self, parent=None):
+        """Remove a selected schedule."""
+        tree = getattr(self.app, 'schedule_tree', None)
+        if not tree:
+            return
+        selection = tree.selection()
+        if not selection:
+            return
+        item = tree.item(selection[0])
+        task_id = item["values"][0]
+        task_name = item["values"][1]
+        if messagebox.askyesno("Remove Schedule", f"Remove schedule '{task_name}'?"):
+            remove_schedule(task_id or task_name)
+            self._refresh_schedule_tree()
+
+    def _schedule_toggle_status(self, parent=None):
+        """Enable or disable a selected schedule."""
+        tree = getattr(self.app, 'schedule_tree', None)
+        if not tree:
+            return
+        selection = tree.selection()
+        if not selection:
+            return
+        item = tree.item(selection[0])
+        task_id = item["values"][0]
+        task_name = item["values"][1]
+        current_status = item["values"][6]
+
+        if current_status == ScheduleStatus.ACTIVE.value:
+            result = disable_schedule(task_id or task_name)
+            if result:
+                messagebox.showinfo("Disabled", _("schedule_disabled"))
+            else:
+                messagebox.showerror("Error", _("schedule_error"))
+        else:
+            result = enable_schedule(task_id or task_name)
+            if result:
+                messagebox.showinfo("Enabled", _("schedule_enabled"))
+            else:
+                messagebox.showerror("Error", _("schedule_error"))
+
+        self._refresh_schedule_tree()
 
     def show_queue(self):
         """Show the export queue dialog."""
