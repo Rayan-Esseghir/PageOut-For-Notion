@@ -1,3 +1,5 @@
+from typing import Any
+
 """Secret storage (OS keyring) and redaction.
 
 Tokens are kept in the OS keyring (Windows Credential Manager, macOS Keychain, Secret Service).
@@ -10,8 +12,11 @@ import re
 SERVICE = "PageOut for Notion"
 SECRET_KEYS = {"token": "notion_token", "gemini_api_key": "gemini_api_key"}
 
+_keyring: Any = None
 try:  # pip install keyring   (optional)
-    import keyring as _keyring
+    import keyring
+
+    _keyring = keyring
 except Exception:  # ImportError or a broken backend at import time
     _keyring = None
 

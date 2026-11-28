@@ -22,9 +22,11 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 # Optional dependency: keyring for credential storage
+keyring: Any = None
 try:
-    import keyring
+    import keyring as _keyring
 
+    keyring = _keyring
     KEYRING_AVAILABLE = True
 except ImportError:
     keyring = None
