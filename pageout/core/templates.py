@@ -62,7 +62,7 @@ class Template:
     def _resolve_value(self, key: str, context: Dict[str, Any]) -> Any:
         """Resolve a potentially nested key (e.g., 'doc.title') from context."""
         parts = key.split(".")
-        value = context
+        value: Any = context
         for part in parts:
             if isinstance(value, dict):
                 value = value.get(part)

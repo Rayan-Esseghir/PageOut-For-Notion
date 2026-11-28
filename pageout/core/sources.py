@@ -403,7 +403,7 @@ def extract_all_ids(url: str) -> List[str]:
     return [m.group(1).lower() for m in _MULTI_ID_RE.finditer(url.replace("-", ""))]
 
 
-def build_source_from_url(url: str, name: str = None, source_type: str = "Auto-detect") -> Dict:
+def build_source_from_url(url: str, name: str | None = None, source_type: str = "Auto-detect") -> Dict:
     """Build a source dictionary from a URL, extracting all relevant IDs.
 
     Args:

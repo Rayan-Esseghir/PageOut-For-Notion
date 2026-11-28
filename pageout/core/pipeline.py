@@ -63,8 +63,8 @@ try:
     )
 except ImportError:
     SYNC_TARGETS = ["None"]
-    sync_to_local_folder = sync_to_gdrive = sync_to_dropbox = sync_to_s3 = sync_to_git = None
-    perform_sync = SyncReport = None
+    sync_to_local_folder = sync_to_gdrive = sync_to_dropbox = sync_to_s3 = sync_to_git = None  # type: ignore[assignment]
+    perform_sync = SyncReport = None  # type: ignore[assignment,misc]
 from pageout.core.ir import walk as walk_ir
 from pageout.core.naming import build_name, clean_filename, format_date
 from pageout.core.resolver import Resolver
@@ -1107,7 +1107,7 @@ class Result:
     failed: list = field(default_factory=list)
     skipped: int = 0
     last_tex: str = ""
-    timing: TimingReport = None
+    timing: TimingReport | None = None
     profile_timing: bool = False
     # Phase 16: Sync result
     sync_target: str = "None"

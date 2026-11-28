@@ -365,8 +365,8 @@ def _add_unix_cron(task: ScheduledTask) -> bool:
             cmd_parts.extend(["--set", f"group_by={task.group_by}"])
 
         # Add token from environment
-        if os.environ.get("NOTION_TOKEN"):
-            cmd_parts.extend(["--token", os.environ.get("NOTION_TOKEN")])
+        if token := os.environ.get("NOTION_TOKEN"):
+            cmd_parts.extend(["--token", token])
 
         command = " ".join(cmd_parts)
 

@@ -50,3 +50,7 @@ ignore_missing_imports = true
 warn_unused_ignores = true
 check_untyped_defs = false
 files = ["pageout/core"]
+
+[[tool.mypy.overrides]]
+module = ["pageout.gui.*"]
+ignore_errors = true

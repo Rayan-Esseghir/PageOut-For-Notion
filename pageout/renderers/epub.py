@@ -1,3 +1,5 @@
+from typing import Any
+
 """EPUB renderer (reads IR only)."""
 
 import uuid
@@ -68,7 +70,7 @@ def build_epub(title: str, icon_text: str, rows: list, tree, r: R, path: str, cf
     book.add_item(main_item)
 
     # Add chapter items for sub-pages
-    chapters = []
+    chapters: list[dict[str, Any]] = []
     for sub in _extract_chapters(tree):
         chap = epub.EpubHtml(
             title=sub["title"],
@@ -174,7 +176,7 @@ def _build_nav(title: str, chapters: list) -> str:
 
 def _extract_chapters(tree) -> list:
     """Extract chapters from the block tree."""
-    chapters = []
+    chapters: list[dict[str, Any]] = []
 
     def walk_blocks(blocks, depth=0):
         for b in blocks:

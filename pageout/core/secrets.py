@@ -13,7 +13,7 @@ SECRET_KEYS = {"token": "notion_token", "gemini_api_key": "gemini_api_key"}
 try:  # pip install keyring   (optional)
     import keyring as _keyring
 except Exception:  # ImportError or a broken backend at import time
-    _keyring = None  # type: ignore[assignment]
+    _keyring = None
 
 
 def keyring_available() -> bool:
