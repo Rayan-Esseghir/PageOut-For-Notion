@@ -174,6 +174,13 @@ class App:
                 self.V[key] = tk.IntVar(value=int(val))
             elif isinstance(default, float):
                 self.V[key] = tk.DoubleVar(value=float(val))
+            elif isinstance(default, list):
+                # For list defaults (like 'sources'), store as JSON string in StringVar
+                import json
+                if isinstance(val, list):
+                    self.V[key] = tk.StringVar(value=json.dumps(val))
+                else:
+                    self.V[key] = tk.StringVar(value=str(val))
             else:
                 self.V[key] = tk.StringVar(value=str(val))
 
@@ -249,9 +256,16 @@ class App:
 
     # ---- helpers ----
     def collect(self):
+        import json
         c = {k: v.get() for k, v in self.V.items()}
         c["custom_css"] = self.css_text.get("1.0", "end").strip()
         c["token"] = c["token"].strip()
+        # Parse JSON string back to list for 'sources' field
+        if "sources" in c and isinstance(c.get("sources"), str):
+            try:
+                c["sources"] = json.loads(c["sources"])
+            except (json.JSONDecodeError, TypeError):
+                c["sources"] = []
         return c
 
     def log(self, msg):

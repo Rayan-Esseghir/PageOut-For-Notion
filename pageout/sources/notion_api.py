@@ -61,12 +61,95 @@ def api(fn, **kw):
 
 
 def parse_database_id(text):
-    """Accepts a raw ID or a full Notion URL (page or database)."""
-    text = text.strip()
+    """Accepts a raw ID or a full Notion URL (page or database).
+
+    Returns the 32-hex ID if valid, or None if the input is not a valid ID/URL.
+    """
+    if not text:
+        return None
+    text = str(text).strip()
+    if not text:
+        return None
     path = urlparse(text).path if ("://" in text or "notion.so" in text) else text
     seg = path.rstrip("/").rsplit("/", 1)[-1].replace("-", "")
     m = re.search(r"([0-9a-fA-F]{32})$", seg)
-    return m.group(1) if m else text
+    return m.group(1) if m else None
+
+
+def normalize_source_ids(source):
+    """Normalize source input into a list of valid 32-hex IDs.
+
+    Accepts:
+    - None or empty: returns []
+    - List/tuple/set of IDs/URLs: normalizes each and dedupes
+    - JSON-encoded string like '["id1", "id2"]' or "[]"
+    - Python repr string like "['id1', 'id2']"
+    - Space/comma/semicolon-separated string of IDs/URLs
+    - Single ID or URL string
+
+    Returns a deduped list of lowercase 32-hex IDs.
+    """
+    if source is None:
+        return []
+    if isinstance(source, (list, tuple, set)):
+        items = list(source)
+    elif isinstance(source, dict):
+        # Handle dict with 'sources' key or single item
+        items = source.get("sources", [source.get("url", "")]) if "sources" in source else [source.get("url", "")]
+    elif isinstance(source, str):
+        text = source.strip()
+        if not text:
+            return []
+        # Try to parse as JSON first
+        try:
+            import json
+            parsed = json.loads(text)
+            if isinstance(parsed, list):
+                items = parsed
+            elif isinstance(parsed, str):
+                items = [parsed]
+            else:
+                items = []
+        except (json.JSONDecodeError, TypeError):
+            # Try Python repr format like "['id1', 'id2']"
+            if text.startswith("[") or text.startswith("("):
+                try:
+                    # Use ast.literal_eval for safer parsing
+                    import ast
+                    parsed = ast.literal_eval(text)
+                    if isinstance(parsed, (list, tuple)):
+                        items = list(parsed)
+                    else:
+                        items = [parsed]
+                except (ValueError, SyntaxError):
+                    items = [text]
+            else:
+                # Treat as space/comma/semicolon separated
+                items = re.split(r"[\s,;]+", text)
+    else:
+        items = [source]
+
+    # Extract valid 32-hex IDs from all items
+    ids = []
+    for item in items:
+        if item is None:
+            continue
+        item_str = str(item).strip()
+        if not item_str:
+            continue
+        # Try to parse as URL/ID
+        parsed_id = parse_database_id(item_str)
+        if parsed_id and len(parsed_id) == 32 and all(c in '0123456789abcdefABCDEF' for c in parsed_id):
+            ids.append(parsed_id.lower())
+
+    # Dedupe while preserving order
+    seen = set()
+    result = []
+    for i in ids:
+        if i not in seen:
+            seen.add(i)
+            result.append(i)
+    return result
 
 
 def extract_date_from_props(properties):
@@ -212,20 +295,16 @@ def resolve_roots(notion, source_text, source_type, extra_sources=None):
         source_type: Type of source (Auto-detect, Database, Single page)
         extra_sources: Optional list of additional source IDs/URLs to include
     """
-    # Combine main source with extra sources
-    all_sources = [source_text]
-    if extra_sources:
-        all_sources.extend(extra_sources)
+    # Normalize all sources - handles strings, JSON strings, lists, etc.
+    all_ids = normalize_source_ids(source_text)
+    extra_ids = normalize_source_ids(extra_sources) if extra_sources else []
+    all_ids = list(dict.fromkeys(all_ids + extra_ids))  # Dedupe while preserving order
 
-    # Build combined source text (space-separated for token splitting)
-    combined_text = " ".join(str(s) for s in all_sources if s)
-
-    tokens = [t for t in re.split(r"[\s,;]+", combined_text.strip()) if t]
-    if not tokens:
+    if not all_ids:
         raise Exception("Enter a database or page ID / URL.")
+
     roots, seen = [], set()
-    for tok in tokens:
-        _id = parse_database_id(tok)
+    for _id in all_ids:
         got = None
         if source_type in ("Auto-detect", "Single page"):
             try:
@@ -243,8 +322,12 @@ def resolve_roots(notion, source_text, source_type, extra_sources=None):
 
 
 def load_property_names(notion, source_text, source_type):
-    tok = re.split(r"[\s,;]+", source_text.strip())[0]
-    _id = parse_database_id(tok)
+    # Normalize source_text to extract valid IDs
+    ids = normalize_source_ids(source_text)
+    if not ids:
+        raise Exception("Enter a database or page ID / URL.")
+    _id = ids[0]
+
     if source_type in ("Auto-detect", "Single page"):
         try:
             return list(api(notion.pages.retrieve, page_id=_id)["properties"].keys())

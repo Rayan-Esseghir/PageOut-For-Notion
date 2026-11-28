@@ -504,7 +504,8 @@ def test_update_source_all_fields(isolated):
     assert src["sort_desc"] is True
     assert src["max_pages"] == 99
     assert src["group_by"] == "NewGroup"
-    assert src["sources"] == [DB_ID, DB_ID]
+    # Deduplication: same ID twice becomes one ID
+    assert src["sources"] == [DB_ID]
 
 
 # ---------------------------------------------------------------------- Test source_exists
@@ -549,3 +550,148 @@ def test_toggle_pin_raises_for_nonexistent(isolated):
     """toggle_pin should raise FileNotFoundError for nonexistent source."""
     with pytest.raises(FileNotFoundError):
         toggle_pin("nonexistent-source")
+
+
+# ---------------------------------------------------------------------- Test normalize_source_ids helper
+def test_normalize_source_ids_handles_empty():
+    """normalize_source_ids should handle None and empty inputs."""
+    from pageout.sources.notion_api import normalize_source_ids
+
+    assert normalize_source_ids(None) == []
+    assert normalize_source_ids("") == []
+    assert normalize_source_ids([]) == []
+    assert normalize_source_ids({}) == []
+
+
+def test_normalize_source_ids_handles_json_string():
+    """normalize_source_ids should parse JSON-encoded strings."""
+    from pageout.sources.notion_api import normalize_source_ids
+
+    # Empty array as JSON string
+    assert normalize_source_ids("[]") == []
+
+    # Array with one ID
+    result = normalize_source_ids('["abcd1234abcd1234abcd1234abcd1234"]')
+    assert result == ["abcd1234abcd1234abcd1234abcd1234"]
+
+    # Array with multiple IDs
+    result = normalize_source_ids('["11111111111111111111111111111111", "22222222222222222222222222222222"]')
+    assert len(result) == 2
+
+
+def test_normalize_source_ids_handles_python_repr():
+    """normalize_source_ids should parse Python repr strings like ['id1', 'id2']."""
+    from pageout.sources.notion_api import normalize_source_ids
+
+    result = normalize_source_ids("['11111111111111111111111111111111']")
+    assert result == ["11111111111111111111111111111111"]
+
+
+def test_normalize_source_ids_handles_space_separated():
+    """normalize_source_ids should parse space/comma/semicolon separated IDs."""
+    from pageout.sources.notion_api import normalize_source_ids
+
+    # Space separated
+    result = normalize_source_ids("11111111111111111111111111111111 22222222222222222222222222222222")
+    assert len(result) == 2
+
+    # Comma separated
+    result = normalize_source_ids("11111111111111111111111111111111,22222222222222222222222222222222")
+    assert len(result) == 2
+
+
+def test_normalize_source_ids_handles_urls():
+    """normalize_source_ids should extract IDs from Notion URLs."""
+    from pageout.sources.notion_api import normalize_source_ids
+
+    url = "https://www.notion.so/workspace/My-Database-11111111111111111111111111111111"
+    result = normalize_source_ids(url)
+    assert result == ["11111111111111111111111111111111"]
+
+
+def test_normalize_source_ids_handles_list():
+    """normalize_source_ids should handle actual lists."""
+    from pageout.sources.notion_api import normalize_source_ids
+
+    result = normalize_source_ids(["11111111111111111111111111111111", "22222222222222222222222222222222"])
+    assert len(result) == 2
+    assert result == ["11111111111111111111111111111111", "22222222222222222222222222222222"]
+
+
+def test_normalize_source_ids_dedupes():
+    """normalize_source_ids should dedupe IDs while preserving order."""
+    from pageout.sources.notion_api import normalize_source_ids
+
+    result = normalize_source_ids("11111111111111111111111111111111 11111111111111111111111111111111 22222222222222222222222222222222")
+    assert len(result) == 2
+    assert result == ["11111111111111111111111111111111", "22222222222222222222222222222222"]
+
+
+def test_normalize_source_ids_rejects_brackets():
+    """normalize_source_ids should NOT return '[' as an ID."""
+    from pageout.sources.notion_api import normalize_source_ids
+
+    # This was the bug: string "[]" would cause parse_database_id("[")
+    result = normalize_source_ids("[]")
+    assert result == []  # Should be empty list, not ["["] or any invalid IDs
+
+    result = normalize_source_ids("['url']")
+    # Python repr that would cause issues if parsed character by character
+    assert "[" not in result
+
+
+# ---------------------------------------------------------------------- Test resolve_roots with string sources
+@pytest.mark.parametrize("extra_sources", [
+    [],  # Normal empty list
+    None,  # None
+    "[]",  # JSON string empty array
+    "['" + DB_ID + "']",  # Python repr string
+    '["' + DB_ID + '"]',  # JSON string with one ID
+    DB_ID,  # Single ID string
+])
+def test_resolve_roots_extra_sources_normalization(tmp_path, extra_sources):
+    """resolve_roots should handle various forms of extra_sources input."""
+    from pageout.sources.notion_api import resolve_roots
+
+    notion = FakeNotion()
+    # This should not raise or call the API with "["
+    roots = resolve_roots(notion, DB_ID, "Database", extra_sources=extra_sources)
+    assert isinstance(roots, list)
+
+
+def test_resolve_roots_does_not_call_api_with_bracket():
+    """resolve_roots should never call the API with '[' as database_id."""
+    from pageout.sources.notion_api import resolve_roots
+
+    notion = FakeNotion()
+    # This was the bug: string sources would cause database_id="[" to be passed to API
+    roots = resolve_roots(notion, DB_ID, "Database", extra_sources="[]")
+
+    # Verify no call was made with "["
+    for call in notion.calls:
+        assert "[" not in call[1], f"API called with invalid ID containing bracket: {call}"
+
+
+# ---------------------------------------------------------------------- Test load_property_names with string source_text
+@pytest.mark.parametrize("source_text", [
+    DB_ID,
+    "https://www.notion.so/" + DB_ID,
+    '["' + DB_ID + '"]',  # JSON string
+])
+def test_load_property_names_handles_strings(tmp_path, source_text):
+    """load_property_names should handle string inputs properly."""
+    from pageout.sources.notion_api import load_property_names
+
+    notion = FakeNotion()
+    # Should not raise and should return a list of property names
+    names = load_property_names(notion, source_text, "Database")
+    assert isinstance(names, list)
+
+
+def test_load_property_names_rejects_empty_string():
+    """load_property_names should raise for empty string input."""
+    from pageout.sources.notion_api import load_property_names
+
+    notion = FakeNotion()
+    with pytest.raises(Exception, match="Enter a database or page ID"):
+        load_property_names(notion, "[]", "Database")

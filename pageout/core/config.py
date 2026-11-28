@@ -447,6 +447,7 @@ DEFAULTS = {
 
 def load_config():
     from pageout.core import secrets
+    from pageout.sources.notion_api import normalize_source_ids
 
     cfg = dict(DEFAULTS)
     try:
@@ -454,6 +455,9 @@ def load_config():
             cfg.update(json.load(f))
     except Exception:
         pass
+    # Normalize sources field to always be a list
+    if "sources" in cfg:
+        cfg["sources"] = normalize_source_ids(cfg["sources"])
     old_ver = int(cfg.get("_ver", 0))
     if old_ver < 2:  # new, more comfortable defaults
         cfg["margin_mm"] = DEFAULTS["margin_mm"]

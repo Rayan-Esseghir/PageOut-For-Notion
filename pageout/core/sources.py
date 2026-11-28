@@ -301,6 +301,8 @@ def update_source(name: str, **kwargs) -> bool:
     Returns:
         True if updated successfully, False if source not found
     """
+    from pageout.sources.notion_api import normalize_source_ids
+
     src = get_source(name)
     if src is None:
         return False
@@ -318,7 +320,8 @@ def update_source(name: str, **kwargs) -> bool:
             elif key == "max_pages":
                 src[key] = int(value)
             elif key == "sources":
-                src[key] = value if isinstance(value, list) else []
+                # Normalize sources to a list of valid IDs
+                src[key] = normalize_source_ids(value)
             else:
                 src[key] = value
 

@@ -129,6 +129,7 @@ class Presenter:
 
     def reset_config_from_file(self):
         """Reset UI config from the current config file."""
+        import json as _json
         try:
             self.cfg = load_config()
             # Update all UI variables from loaded config
@@ -141,6 +142,12 @@ class Presenter:
                         self.app.V[key].set(int(val))
                     elif isinstance(default, float):
                         self.app.V[key].set(float(val))
+                    elif isinstance(default, list):
+                        # For list defaults (like 'sources'), store as JSON string
+                        if isinstance(val, list):
+                            self.app.V[key].set(_json.dumps(val))
+                        else:
+                            self.app.V[key].set(str(val))
                     else:
                         self.app.V[key].set(str(val))
             # Update unsaved changes tracking
@@ -1337,6 +1344,7 @@ class Presenter:
             merge_profile_into_config(profile_data, cfg)
 
             # Apply merged config to UI
+            _json = __import__('json')
             for key, val in cfg.items():
                 if key in self.app.V:
                     default = DEFAULTS.get(key)
@@ -1346,6 +1354,12 @@ class Presenter:
                         self.app.V[key].set(int(val))
                     elif isinstance(default, float):
                         self.app.V[key].set(float(val))
+                    elif isinstance(default, list):
+                        # For list defaults (like 'sources'), store as JSON string
+                        if isinstance(val, list):
+                            self.app.V[key].set(_json.dumps(val))
+                        else:
+                            self.app.V[key].set(str(val))
                     else:
                         self.app.V[key].set(str(val))
 
@@ -1600,6 +1614,12 @@ class Presenter:
                             self.app.V[key].set(int(val))
                         elif isinstance(default, float):
                             self.app.V[key].set(float(val))
+                        elif isinstance(default, list):
+                            # For list defaults (like 'sources'), store as JSON string
+                            if isinstance(val, list):
+                                self.app.V[key].set(json.dumps(val))
+                            else:
+                                self.app.V[key].set(str(val))
                         else:
                             self.app.V[key].set(str(val))
 
@@ -1967,6 +1987,7 @@ class Presenter:
         """Reset all preferences to defaults."""
         if not messagebox.askyesno(_("preferences_reset"), _("preferences_reset_confirm")):
             return
+        import json
         for key, default in DEFAULTS.items():
             if key in self.app.V:
                 if isinstance(default, bool):
@@ -1975,6 +1996,9 @@ class Presenter:
                     self.app.V[key].set(default)
                 elif isinstance(default, float):
                     self.app.V[key].set(default)
+                elif isinstance(default, list):
+                    # For list defaults (like 'sources'), store as JSON string
+                    self.app.V[key].set(json.dumps(default))
                 else:
                     self.app.V[key].set(str(default) if default else "")
         for key in self._section_modified:
@@ -1984,6 +2008,7 @@ class Presenter:
     def _cancel_preferences(self, dialog):
         """Cancel preferences dialog, reverting all changes."""
         # Revert to original values
+        import json
         for key, val in self._original_values.items():
             if key in self.app.V:
                 default = DEFAULTS.get(key, "")
@@ -1993,6 +2018,12 @@ class Presenter:
                     self.app.V[key].set(int(val))
                 elif isinstance(default, float):
                     self.app.V[key].set(float(val))
+                elif isinstance(default, list):
+                    # For list defaults, restore from original values
+                    if isinstance(val, list):
+                        self.app.V[key].set(json.dumps(val))
+                    else:
+                        self.app.V[key].set(str(val))
                 else:
                     self.app.V[key].set(str(val))
         dialog.destroy()
