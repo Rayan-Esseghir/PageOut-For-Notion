@@ -60,6 +60,7 @@ from pageout.core.secrets import keyring_available, redact
 from pageout.gui.i18n import _
 from pageout.gui.shell import create_shell
 from pageout.gui.theme import HiDPISupport, ThemeManager
+from pageout.gui.widgets import ScrollFrame  # noqa: F401
 from pageout.gui.widgets import _GENERIC_FONT_ALIAS, CheckList, FontPicker, create_tool_tip
 from pageout.ocr.gemini import _GENAI_AVAILABLE
 from pageout.renderers.html import _HEX_RE
