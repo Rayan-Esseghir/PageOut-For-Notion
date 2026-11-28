@@ -70,7 +70,7 @@ def test_sync_config_in_defaults():
     assert DEFAULTS["sync_branch"] == "main"
     assert DEFAULTS["dropbox_path"] == "/exports"
     assert DEFAULTS["s3_prefix"] == "exports"
-    assert DEFAULTS["sync_after_export"] == False
+    assert not DEFAULTS["sync_after_export"]
 
 
 # ---------------------------------------------------------------------- Test sync module loading

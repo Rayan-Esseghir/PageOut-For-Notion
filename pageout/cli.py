@@ -205,7 +205,7 @@ def build_parser():
     # Profile subcommands
     ps = sub.add_parser("profile", help="manage saved profiles")
     ps_sub = ps.add_subparsers(dest="profile_cmd")
-    ps_list = ps_sub.add_parser("list", help="list all profiles")
+    ps_sub.add_parser("list", help="list all profiles")
     ps_save = ps_sub.add_parser("save", help="save current config as a profile")
     ps_save.add_argument("name", help="profile name")
     ps_load = ps_sub.add_parser("load", help="load a profile and print merged config")
@@ -216,7 +216,7 @@ def build_parser():
     # Source subcommands
     ss = sub.add_parser("source", help="manage saved sources (databases/pages)")
     ss_sub = ss.add_subparsers(dest="source_cmd")
-    ss_list = ss_sub.add_parser("list", help="list all saved sources")
+    ss_sub.add_parser("list", help="list all saved sources")
     ss_add = ss_sub.add_parser("add", help="add a new source")
     ss_add.add_argument("name", help="source name")
     ss_add.add_argument("url", help="Notion database/page URL or ID")
@@ -232,7 +232,7 @@ def build_parser():
     # Queue subcommands
     qs = sub.add_parser("queue", help="manage export queue")
     qs_sub = qs.add_subparsers(dest="queue_cmd")
-    qs_list = qs_sub.add_parser("list", help="list all jobs in the queue")
+    qs_sub.add_parser("list", help="list all jobs in the queue")
     qs_add = qs_sub.add_parser("add", help="add current settings as a job to the queue")
     qs_add.add_argument("--name", help="job name")
     qs_add.add_argument("--priority", choices=["low", "normal", "high"], default="normal", help="job priority")
@@ -242,13 +242,13 @@ def build_parser():
     qs_retry.add_argument("job_id", help="job ID to retry")
     qs_remove = qs_sub.add_parser("remove", help="remove a job from queue (non-running)")
     qs_remove.add_argument("job_id", help="job ID to remove")
-    qs_clear = qs_sub.add_parser("clear", help="clear completed/failed/cancelled history")
-    qs_stats = qs_sub.add_parser("stats", help="show queue statistics")
+    qs_sub.add_parser("clear", help="clear completed/failed/cancelled history")
+    qs_sub.add_parser("stats", help="show queue statistics")
 
     # Schedule subcommands
     ss = sub.add_parser("schedule", help="manage scheduled exports")
     ss_sub = ss.add_subparsers(dest="schedule_cmd")
-    ss_list = ss_sub.add_parser("list", help="list all scheduled tasks")
+    ss_sub.add_parser("list", help="list all scheduled tasks")
     ss_add = ss_sub.add_parser("add", help="add a new scheduled task")
     ss_add.add_argument("name", help="schedule name")
     ss_add.add_argument("source", help="Notion database/page URL or ID")
@@ -267,7 +267,7 @@ def build_parser():
     ss_remove.add_argument("name", help="schedule name to remove")
     ss_enable = ss_sub.add_parser("enable", help="enable a disabled schedule")
     ss_enable.add_argument("name", help="schedule name to enable")
-    ss_disable = ss_sub.add_parser("disable", help="disable an active schedule")
+    ss_sub.add_parser("disable", help="disable an active schedule")
 
     return p
 

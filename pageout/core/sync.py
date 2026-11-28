@@ -525,7 +525,7 @@ def perform_sync(source_dir: str, sync_target: str, sync_config: dict, cfg: dict
             sync_target, False, "Source directory does not exist", 0, ["Source directory does not exist: " + source_dir]
         )
 
-    timestamp = datetime.now().isoformat()
+    datetime.now().isoformat()
 
     if sync_target == "Local folder":
         result = sync_to_local_folder(source_dir, sync_config.get("sync_path", ""), cfg)

@@ -289,7 +289,7 @@ def test_adoc_export_creates_file(tmp_path, isolated):
 
 def test_rst_content_structure(tmp_path, isolated):
     """RST export should have proper document structure."""
-    result = export(cfg_for(tmp_path, fmt_rst=True), notion=FakeNotion())
+    export(cfg_for(tmp_path, fmt_rst=True), notion=FakeNotion())
     rst_files = list(tmp_path.rglob("*.rst"))
     if rst_files:
         content = rst_files[0].read_text(encoding="utf-8")
@@ -298,7 +298,7 @@ def test_rst_content_structure(tmp_path, isolated):
 
 def test_adoc_content_structure(tmp_path, isolated):
     """AsciiDoc export should have proper document structure."""
-    result = export(cfg_for(tmp_path, fmt_adoc=True), notion=FakeNotion())
+    export(cfg_for(tmp_path, fmt_adoc=True), notion=FakeNotion())
     adoc_files = list(tmp_path.rglob("*.adoc"))
     if adoc_files:
         content = adoc_files[0].read_text(encoding="utf-8")
@@ -330,7 +330,6 @@ def test_multiple_formats_together(tmp_path, isolated):
 def test_obsidian_vault_config_exists():
     """Obsidian vault mode settings should be configurable."""
     # The md_preset "Obsidian" should be available
-    valid_presets = ("GFM", "Vanilla", "Obsidian")
     # This tests that the configuration system supports Obsidian mode
     assert "Obsidian" in MD_PRESETS
 

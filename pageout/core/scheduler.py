@@ -278,7 +278,7 @@ def _add_windows_task(task: ScheduledTask) -> bool:
         task_name = f"PageOut-{task.name}"
 
         # Build the command to run
-        python_exe = sys.executable if "sys" in dir() else "python"
+        sys.executable if "sys" in dir() else "python"
         cmd_parts = [
             "pageout",
             "export",
@@ -309,7 +309,6 @@ def _add_windows_task(task: ScheduledTask) -> bool:
 
         # Parse the schedule (supports: daily, weekly, monthly, at HH:MM, etc.)
         # Map to schtasks format
-        schtasks_schedule = task.schedule
 
         # Build schtasks command
         schtasks_cmd = [

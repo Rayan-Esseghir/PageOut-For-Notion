@@ -203,7 +203,7 @@ class ExportQueue:
             job = self.jobs.get(job_id)
             if job and job.status in (JobStatus.FAILED, JobStatus.CANCELLED):
                 # Create a new job with same config
-                new_id = self.add_job(
+                self.add_job(
                     name=job.name + " (retry)",
                     config=job.config,
                     priority=job.priority,

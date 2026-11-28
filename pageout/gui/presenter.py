@@ -229,7 +229,7 @@ class Presenter:
                 return False
 
         # Check if pages need loading
-        shown = self.app.props_list.selected_labels() if hasattr(self.app, "props_list") else []
+        self.app.props_list.selected_labels() if hasattr(self.app, "props_list") else []
         selected = None
         if self.app.loaded_pages and self.app.loaded_source == c["database"].strip():
             sel = self.app.pages_list.selected_indices() if hasattr(self.app, "pages_list") else []
@@ -433,7 +433,7 @@ class Presenter:
             name = f"Export {datetime.now().strftime('%Y-%m-%d %H:%M')}"
 
         # Check if pages need loading
-        shown = self.app.props_list.selected_labels() if hasattr(self.app, "props_list") else []
+        self.app.props_list.selected_labels() if hasattr(self.app, "props_list") else []
         selected = None
         if self.app.loaded_pages and self.app.loaded_source == c["database"].strip():
             sel = self.app.pages_list.selected_indices() if hasattr(self.app, "pages_list") else []
@@ -610,7 +610,7 @@ class Presenter:
         preview_label.pack(anchor="w")
 
         def update_preview(*args):
-            name = name_var.get()
+            name_var.get()
             source = source_var.get()
             out = output_var.get()
             fmt = formats_var.get()
@@ -631,7 +631,7 @@ class Presenter:
             try:
                 if hasattr(self, "_edit_schedule_mode") and self._edit_schedule_mode:
                     # Edit mode - use existing ID
-                    task_id = add_schedule(
+                    add_schedule(
                         name=name_var.get(),
                         source=source_var.get(),
                         output_dir=output_var.get(),
@@ -640,7 +640,7 @@ class Presenter:
                     )
                 else:
                     # Add mode
-                    task_id = add_schedule(
+                    add_schedule(
                         name=name_var.get(),
                         source=source_var.get(),
                         output_dir=output_var.get(),
@@ -1664,7 +1664,7 @@ class Presenter:
             if selection:
                 item = tree.item(selection[0])
                 source_name = item["values"][0]
-                new_status = toggle_pin(source_name)
+                toggle_pin(source_name)
                 refresh_tree()
 
         btn_frame = ttk.Frame(dialog)

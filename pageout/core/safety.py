@@ -63,7 +63,7 @@ def estimate_export_time(page_count: int, cfg: dict) -> int:
 
 def check_large_export(page_count: int, cfg: dict) -> SafetyCheck:
     """Check if export is large enough to warrant confirmation."""
-    threshold_mb = cfg.get("prefs_large_export_threshold_mb", 500)
+    cfg.get("prefs_large_export_threshold_mb", 500)
     estimated_minutes = estimate_export_time(page_count, cfg)
 
     # Consider large if many pages or long estimated time

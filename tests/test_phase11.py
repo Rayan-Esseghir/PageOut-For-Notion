@@ -679,7 +679,7 @@ def test_resolve_roots_does_not_call_api_with_bracket():
 
     notion = FakeNotion()
     # This was the bug: string sources would cause database_id="[" to be passed to API
-    roots = resolve_roots(notion, DB_ID, "Database", extra_sources="[]")
+    resolve_roots(notion, DB_ID, "Database", extra_sources="[]")
 
     # Verify no call was made with "["
     for call in notion.calls:

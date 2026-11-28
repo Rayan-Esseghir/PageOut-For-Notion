@@ -158,8 +158,6 @@ EN = {
     "bottom_right": "Bottom Right",
     "top_right": "Top Right",
     "format": "Format",
-    # LaTeX & AI tab
-    "latex": "LaTeX (.tex)",
     "export_latex": "Export as LaTeX (.tex) document (compile with pdflatex or xelatex for Arabic)",
     "images_in_tex": "Images in .tex",
     "copy_latex": "📋 Copy last exported LaTeX",
@@ -345,11 +343,6 @@ EN = {
     "preferences_reset_done": "All preferences have been reset to defaults.",
     "preferences_applied": "Preferences Saved",
     "preferences_applied_msg": "Your changes have been saved.",
-    # Theme
-    "theme_light": "Light",
-    "theme_dark": "Dark",
-    "theme_system": "System",
-    "theme_label": "Theme:",
     "theme_help": "Switch between light, dark, or system-adaptive theme.",
     "theme_picker_help": "Choose theme from available options.",
     # Section header for Preferences dialogs
@@ -358,21 +351,15 @@ EN = {
     "ui_scale": "UI Scale:",
     "ui_scale_help": "Adjust interface scaling for high-DPI displays. 1.0 = 100%.",
     "preferences_ui_scale": "UI Scale",
-    # Accent color
-    "accent_color": "Accent color",
     "accent_color_help": "Customize the accent color for buttons, links, and highlights.",
     "color_picker_title": "Choose Accent Color",
     "preferences_accent": "Accent Color",
     # Window management
     "preferences_window_section": "Window Management",
-    "prefs_remember_window": "Remember window size & position",
-    "prefs_confirm_exit": "Confirm on exit",
     "window_management_help": "Control how the application handles window state and behavior.",
-    "prefs_tooltip_delay": "Tooltip delay (ms):",
     "tooltip_delay_help": "Delay before tooltips appear (in milliseconds).",
     # Auto-save section
     "preferences_auto_save_section": "Auto-save Settings",
-    "prefs_auto_save": "Auto-save config on change",
     "prefs_auto_save_help": "Automatically save configuration changes when they occur.",
     # Shortcuts section
     "preferences_main_shortcuts": "Keyboard Shortcuts",
@@ -683,8 +670,6 @@ AR = {
     "bottom_right": "اليمين السفلي",
     "top_right": "اليمين العلوي",
     "format": "التنسيق",
-    # LaTeX & AI tab
-    "latex": "LaTeX (.tex)",
     "export_latex": "تصدير كـ LaTeX (.tex) (اكتب مع pdflatex أو xelatex للعربية)",
     "images_in_tex": "الصور في .tex",
     "copy_latex": "📋 نسخ LaTeX الأخير المصدَر",
@@ -872,32 +857,21 @@ AR = {
     "preferences_reset_done": "تمت إعادة تعيين جميع الإعدادات إلى الافتراضيات.",
     "preferences_applied": "تم حفظ التفضيلات",
     "preferences_applied_msg": "تم تطبيق تغييراتك وحفظها.",
-    # Theme
-    "theme_light": "فاتح",
-    "theme_dark": "داكن",
-    "theme_system": "نظام",
-    "theme_label": "الثيم:",
     # Section header for Preferences dialogs
     "preferences_theme": "إعدادات المظهر",
     # UI Scale
     "ui_scale": "مقياس الواجهة:",
     "ui_scale_help": "اضبط تعديل الواجهة لتكبير الشاشات عالية الدقة. 1.0 = 100%.",
     "preferences_ui_scale": "مقياس الواجهة",
-    # Accent color
-    "accent_color": "لون التمييز",
     "accent_color_help": "خصص لون التمييز للأزرار والروابط والمؤشرات.",
     "color_picker_title": "اختر لون التمييز",
     "preferences_accent": "لون التمييز",
     # Window management
     "preferences_window_section": "إدارة النافذة",
-    "prefs_remember_window": "تذكر حجم ونقطة النافذة",
-    "prefs_confirm_exit": "تأكيد عند الخروج",
     "window_management_help": "التحكم في كيفية تعامل التطبيق مع حالة النافذة.",
-    "prefs_tooltip_delay": "وقت التلميح (مللي ثانية):",
     "tooltip_delay_help": "الوقت قبل ظهور التلميح (مللي ثانية).",
     # Auto-save section
     "preferences_auto_save_section": "حفظ تلقائي للإعدادات",
-    "prefs_auto_save": "حفظ الإعدادات تلقائياً عند التغيير",
     "prefs_auto_save_help": "حفظ الإعدادات تلقائياً عند حدوث التغيير.",
     # Shortcuts section
     "preferences_main_shortcuts": "اختصارات لوحة المفاتيح",

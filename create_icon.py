@@ -18,7 +18,7 @@ def create_pageout_icon():
         # Calculate dimensions
         margin = max(1, size // 16)
         doc_width = size - 2 * margin
-        doc_height = size - 2 * margin
+        size - 2 * margin
         corner_radius = max(1, size // 16)
 
         # Document background (rounded rectangle)
@@ -30,7 +30,7 @@ def create_pageout_icon():
         content_top = margin + max(2, size // 8)
         content_bottom = size - margin - max(1, size // 20)
         content_left = margin + content_margin
-        content_right = size - margin - content_margin
+        size - margin - content_margin
 
         # Draw lines representing text content
         line_color = (255, 255, 255, 230)

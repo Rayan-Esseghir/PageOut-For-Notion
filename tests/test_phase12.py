@@ -104,7 +104,7 @@ def test_add_schedule_basic(isolated):
 
 def test_add_schedule_with_filters(isolated):
     """Add a scheduled task with filter/sort settings."""
-    task_id = add_schedule(
+    add_schedule(
         name="filtered-schedule",
         source="db-test-id",
         output_dir="./exports",

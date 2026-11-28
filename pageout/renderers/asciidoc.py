@@ -239,13 +239,6 @@ def wrap_asciidoc(title: str, content: str, cfg: dict, frontmatter: str = "") ->
             pass  # Fall back to default structure
 
     # Default structure
-    underlines = {
-        1: "=",
-        2: "==",
-        3: "===",
-        4: "====",
-        5: "~~~~~",
-    }
     title_line = f"={title}"
 
     result = f"{title_line}\n"

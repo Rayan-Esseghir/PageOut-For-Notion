@@ -55,7 +55,10 @@ def index_markdown(title, items, link_path, index_path, date_fmt, with_table, pr
                 # Build content based on with_table setting
                 if with_table:
                     headers, rows = _headers_and_rows(items, date_fmt, props_fn)
-                    esc = lambda s: str(s).replace("|", "\\|").replace("\n", " ")
+
+                    def esc(s):
+                        return str(s).replace("|", "\\|").replace("\n", " ")
+
                     lines = []
                     lines += [
                         "| Title | " + " | ".join(esc(h) for h in headers) + " |",

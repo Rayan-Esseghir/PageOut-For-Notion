@@ -1142,7 +1142,6 @@ class App:
 
     def build_pdf_page(self, parent):
         """Build the PDF page (tab 6)."""
-        V = self.V
         g = self.group(parent, _("page"))
         self.field(g, _("page_size"), self.combo(g, "page_size", PAGE_SIZES, width=14))
         self.field(g, _("orientation"), self.combo(g, "orientation", ["Portrait", "Landscape"], width=14))

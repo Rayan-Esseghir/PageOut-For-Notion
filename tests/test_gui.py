@@ -27,23 +27,14 @@ def test_binding_registry_complete(tmp_path):
     """
     pytest.importorskip("tkinter")
 
-    from pageout.core.config import DEFAULTS
-
     # Keys that are explicitly NOT bound to widgets in the UI
     # (e.g., custom_css is bound directly to a Text widget via V dict entry)
-    EXCLUDED_KEYS = {
-        "custom_css",  # Bound to Text widget directly, not via V
-        "token",  # Bound to Entry widget directly
-        "database",  # Bound to Entry widget directly
-        "save_dir",  # Bound to Entry widget directly
-        "icon_custom_file",  # Bound to Entry widget directly
-    }
-
     # Import the app module to check what's actually bound
     # Get all keys that are bound in the V dictionary
     # We need to simulate App initialization
     import tkinter as tk
 
+    from pageout.core.config import DEFAULTS
     from pageout.gui import app
 
     # Create a minimal app instance to check bindings
@@ -201,12 +192,12 @@ def test_theme_manager_initialization():
     try:
         tm = ThemeManager(root)
         assert tm.current_theme == "light"
-        assert tm.is_dark() == False
+        assert not tm.is_dark()
         assert tm.get_accent_color() == "#37352f"
 
         # Test dark theme
         tm.apply_theme("dark")
-        assert tm.is_dark() == True
+        assert tm.is_dark()
         assert tm.get_accent_color() == "#60a5fa"
     finally:
         root.destroy()

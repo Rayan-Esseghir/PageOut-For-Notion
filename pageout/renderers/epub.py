@@ -84,7 +84,7 @@ def build_epub(title: str, icon_text: str, rows: list, tree, r: R, path: str, cf
 
     # Define navigation
     nav = epub.EpubNav()
-    nav_content = _build_nav(title, chapters)
+    _build_nav(title, chapters)
     nav = epub.EpubNav()
     book.add_item(nav)
 
