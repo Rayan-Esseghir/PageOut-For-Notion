@@ -35,11 +35,13 @@ class CheckList(ttk.Frame):
     def __init__(self, parent, height=190, empty_text="Nothing loaded yet."):
         super().__init__(parent)
         self.empty_text = empty_text
+        # Get background color from style for theme awareness
+        bg = ttk.Style().lookup("TFrame", "background") or "#ffffff"
         self.canvas = tk.Canvas(
-            self, height=height, highlightthickness=1, highlightbackground="#c4c4c4", bg="white", yscrollincrement=20
+            self, height=height, highlightthickness=1, highlightbackground="#c4c4c4", bg=bg, yscrollincrement=20
         )
         sb = ttk.Scrollbar(self, orient="vertical", command=self.canvas.yview)
-        self.inner = tk.Frame(self.canvas, bg="white")
+        self.inner = tk.Frame(self.canvas, bg=bg)
         self._win = self.canvas.create_window((0, 0), window=self.inner, anchor="nw")
         self.inner.bind("<Configure>", lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
         self.canvas.bind("<Configure>", lambda e: self.canvas.itemconfigure(self._win, width=e.width))
@@ -59,8 +61,10 @@ class CheckList(ttk.Frame):
         for w in self.inner.winfo_children():
             w.destroy()
         self.vars, self.labels = [], list(labels)
+        # Get background color for theme awareness
+        bg = ttk.Style().lookup("TFrame", "background") or "#ffffff"
         if not labels:
-            tk.Label(self.inner, text=self.empty_text, bg="white", fg="#888888", anchor="w").pack(
+            tk.Label(self.inner, text=self.empty_text, bg=bg, fg="#888888", anchor="w").pack(
                 fill="x", padx=8, pady=8
             )
         for lab in labels:
@@ -71,8 +75,8 @@ class CheckList(ttk.Frame):
                 self.inner,
                 text=lab,
                 variable=v,
-                bg="white",
-                activebackground="#eaf2ff",
+                bg=bg,
+                activebackground=bg,
                 anchor="w",
                 justify="left",
                 relief="flat",

@@ -1203,7 +1203,7 @@ class App:
     def build_output_page(self, parent):
         """Build the Output page (tab 8)."""
         V = self.V
-        g = self.group(parent, _("where_to_save"))
+        g = self.group(parent, _("save_location"))
         orow = ttk.Frame(g)
         ttk.Entry(orow, textvariable=V["save_dir"]).pack(side="left", fill="x", expand=True)
         ttk.Button(orow, text=_("browse"), command=self.choose_folder).pack(side="left", padx=4)

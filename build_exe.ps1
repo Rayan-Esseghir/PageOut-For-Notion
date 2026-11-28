@@ -25,45 +25,47 @@ if ($LASTEXITCODE -ne 0) { throw "PyInstaller not found. Run: pip install pyinst
 if (-not (Test-Path "notion_exporter.py")) { throw "Run this script from the project folder." }
 
 # -- icon (exe icon + bundled copy for the window/taskbar icon) ---------
-$iconArgs = @()
-if (Test-Path "icon.ico") {
-    $iconArgs += "--icon=icon.ico"
-    Write-Host "[INFO] Using icon.ico"
+$iconPath = "pageout/assets/icon.ico"
+if (Test-Path $iconPath) {
+    Write-Host "[INFO] Using $iconPath"
 } else {
     Write-Warning "icon.ico not found - the exe will use the default icon."
-}
-foreach ($f in @("icon.ico", "icon.png")) {
-    if (Test-Path $f) { $iconArgs += "--add-data=$f;." }
 }
 
 # -- bundled assets (offline KaTeX) --------------------------------------
 if (-not (Test-Path "pageout/assets/katex/katex.min.js")) { throw "pageout/assets/katex is missing (run tools/vendor_katex.py)." }
 
-# -- arguments ----------------------------------------------------------
+# -- build using spec file ------------------------------------------------
 $pyiArgs = @(
-    "--noconfirm", "--clean",
+    "--noconfirm",
+    "--clean",
     "--onefile",
     "--name=PageOut-for-Notion"
 )
 if (-not $Console) { $pyiArgs += "--windowed" }
-$pyiArgs += $iconArgs
-$pyiArgs += @(
-    "--add-data=pageout/assets;pageout/assets",   # bundled KaTeX (offline math)
-    "--collect-submodules=pageout",
-    "--collect-all=keyring",                      # OS keyring backends (Windows Credential Manager)
-    "--hidden-import=yaml",
-    # packages with data files / drivers that PyInstaller cannot see on its own
-    "--collect-all=playwright",      # bundled Node driver
-    "--collect-all=google.genai",
-    "--collect-data=docx",           # python-docx default template
-    "--hidden-import=notion_client",
-    "--hidden-import=pypdf",
-    "--hidden-import=PIL.ImageTk",
-    "notion_exporter.py"
-)
+# Use spec file for cleaner build configuration
+if (Test-Path $iconPath) {
+    $pyiArgs += "--icon=$iconPath"
+}
+# Add assets with proper quoting for Windows
+$pyiArgs += "--add-data=pageout/assets;pageout/assets"
+$pyiArgs += "--collect-submodules=pageout"
+$pyiArgs += "--collect-all=keyring"
+$pyiArgs += "--hidden-import=yaml"
+$pyiArgs += "--collect-all=playwright"
+$pyiArgs += "--collect-all=google.genai"
+$pyiArgs += "--collect-data=docx"
+$pyiArgs += "--hidden-import=notion_client"
+$pyiArgs += "--hidden-import=pypdf"
+$pyiArgs += "--hidden-import=PIL.ImageTk"
+$pyiArgs += "notion_exporter.py"
 
-Write-Host "[BUILD] python -m PyInstaller $($pyiArgs -join ' ')"
-& python -m PyInstaller @pyiArgs
+# Join arguments with proper escaping for PowerShell
+$argStrings = $pyiArgs | ForEach-Object { "`"$_`"" }
+$joinedArgs = $argStrings -join " "
+
+Write-Host "[BUILD] python -m PyInstaller $joinedArgs"
+& python -m PyInstaller $pyiArgs
 if ($LASTEXITCODE -ne 0) { throw "PyInstaller build failed (exit code $LASTEXITCODE)." }
 
 Write-Host ""

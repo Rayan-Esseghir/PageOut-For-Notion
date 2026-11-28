@@ -152,13 +152,26 @@ class ThemeManager:
         self.style.configure("TCombobox", fieldbackground="#374151", foreground=fg)
         self.style.configure("TSpinbox", fieldbackground="#374151", foreground=fg)
         self.style.configure("TButton", background=btn_bg, foreground=fg)
-        self.style.configure("TCheckbutton", background=bg, foreground=fg)
-        self.style.configure("TRadiobutton", background=bg, foreground=fg)
+        self.style.configure("TCheckbutton", background=bg, foreground=fg, activebackground=bg)
+        self.style.configure("TRadiobutton", background=bg, foreground=fg, activebackground=bg)
         self.style.configure("TNotebook", background=bg)
         self.style.configure("TNotebook.Tab", background=dark.get("tab", "#374151"), foreground=fg)
         self.style.map("TNotebook.Tab", background=[("selected", bg)], foreground=[("selected", fg)])
         self.style.configure("Vertical.TScrollbar", background=btn_bg, troughcolor=bg)
         self.style.configure("Hint.TLabel", foreground=hint)
+
+        # Ensure checkbutton and radiobutton indicator colors work in dark mode
+        # Use style mapping for proper dark mode appearance
+        self.style.map("TCheckbutton",
+                       background=[("active", bg)],
+                       foreground=[("active", fg)],
+                       indicatorbackground=[("selected", "#60a5fa"), ("!selected", bg)],
+                       indicatorforeground=[("selected", "#1f2937"), ("!selected", fg)])
+        self.style.map("TRadiobutton",
+                       background=[("active", bg)],
+                       foreground=[("active", fg)],
+                       indicatorbackground=[("selected", "#60a5fa"), ("!selected", bg)],
+                       indicatorforeground=[("selected", fg), ("!selected", fg)])
 
         # Update root background
         self.root.configure(background=bg)

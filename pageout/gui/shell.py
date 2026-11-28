@@ -122,7 +122,7 @@ class ShellUI:
 
     def _build_sidebar(self):
         """Build the sidebar navigation."""
-        sidebar_frame = ttk.Frame(self.main_container, width=200)
+        sidebar_frame = ttk.Frame(self.main_container, width=250)
         sidebar_frame.pack(side="left", fill="y", padx=(8, 4), pady=8)
         sidebar_frame.pack_propagate(False)
 

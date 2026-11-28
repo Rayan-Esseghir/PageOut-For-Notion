@@ -221,6 +221,9 @@ EN = {
     "missing_folder_msg": "Choose an output folder on the Output tab.",
     "invalid_value": "Invalid value",
     "invalid_value_msg": "Check the numeric fields.",
+    "Check": "Check",
+    "diag_message": "Diagnosis",
+    "pdf_files": "PDF files",
     "no_pages_selected": "No pages ticked",
     "no_pages_msg": "Tick at least one page in tab 2, or clear the list by loading pages again.",
     "could_not_load_props": "Could not load properties",
@@ -528,6 +531,15 @@ EN = {
     "schedule_action_edit": "Edit",
     "schedule_column_id": "ID",
     "no_schedules": "No schedules configured yet.",
+
+    # Source tab - additional labels
+    "what_to_export": "What to export",
+    "save_location": "Where to save",
+
+    # Formats tab - additional labels
+    "engine": "PDF Engine",
+    "formats": "Export formats",
+    "markdown_databases": "Database export",
 }
 
 _current_lang = "en"
@@ -634,6 +646,15 @@ AR = {
     "depth_hint": "عدد المستويات من الصفحات الفرعية التي سيتم تتبعها.",
     "sub_dbs": "تصدير أيضاً صفحات قواعد البيانات الداخلية (وضع الملفات المنفصلة)",
     "combined_file": "إنشاء ملف موحد لـ HTML / Markdown / LaTeX",
+    "markdown_flavour": "نوع Markdown",
+    "github_flavored": "GFM",
+    "vanilla": "فانيليا",
+    "obsidian": "أوبسيديان",
+    "database_extras": "مكونات إضافية لقاعدة البيانات",
+    "none": "لا شيء",
+    "index_page": "صفحة فهرس",
+    "table_props": "جدول الخصائص",
+    "csv_file": "ملف CSV",
 
     # Design tab
     "quick_style": "نمط سريع",
@@ -746,6 +767,7 @@ AR = {
     "retries": "إعادة المحاولة عند الفشل",
     "extra_wait": "انتظار إضافي لكل صفحة (ث)",
     "profile_timing": "حفظ timing_report.json بيانات تصفح التنفيذ",
+    "browse": "تصفح…",
 
     # Actions
     "export": "تصدير",
@@ -768,6 +790,9 @@ AR = {
     "missing_folder_msg": "اختر مجلد الإخراج في تبويب الإخراج.",
     "invalid_value": "قيمة غير صالحة",
     "invalid_value_msg": "تحقق من الحقول العددية.",
+    "Check": "فحص",
+    "diag_message": "التشخيص",
+    "pdf_files": "ملفات PDF",
     "no_pages_selected": "لا توجد صفحات محددة",
     "no_pages_msg": "اختر صفحة واحدة على الأقل في التبويب 2، أو امسح القائمة.",
     "could_not_load_props": "تعذر تحميل الخصائص",
@@ -868,6 +893,8 @@ AR = {
     "theme_dark": "داكن",
     "theme_system": "نظام",
     "theme_label": "الثيم:",
+    "theme_help": "التحول بين الوضع الفاتح، الداكن، أو الوضع المتكامل مع النظام.",
+    "theme_picker_help": "اختر الثيم من التوفّر.",
 
     # Status bar
     "status_ready": "جاهز",
@@ -1073,6 +1100,15 @@ AR = {
     "schedule_action_edit": "تعديل",
     "schedule_column_id": "المعرّف",
     "no_schedules": "لا توجد جداول بعد.",
+
+    # Source tab - additional labels
+    "what_to_export": "ما هو التصدير",
+    "save_location": "حيث يحفظ",
+
+    # Formats tab - additional labels
+    "engine": "محرك PDF",
+    "formats": "تنسيقات التصدير",
+    "markdown_databases": "تصدير قاعدة البيانات",
 }
 
 LANGUAGES = ("en", "ar")
