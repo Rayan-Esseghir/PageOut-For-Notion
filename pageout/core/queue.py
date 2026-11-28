@@ -307,6 +307,9 @@ class ExportQueue:
             # Import here to avoid circular imports
             from pageout.core.pipeline import export
 
+            class Cancelled(Exception):
+                pass
+
             def progress_callback(i, n):
                 if cancel_flag.is_set():
                     raise Cancelled()

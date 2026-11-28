@@ -316,7 +316,7 @@ class TemplateEngine:
             f'<!doctype html><html lang="en"><head><meta charset="utf-8">'
             f'<meta name="viewport" content="width=device-width, initial-scale=1">'
             f"<title>{esc(title)}</title>{head_extra}<style>{css}</style></head>"
-            f"<body>{'<h1 class="notion-title">' + esc(title) + '</h1>' + body}</body></html>"
+            f'<body><h1 class="notion-title">{esc(title)}</h1>{body}</body></html>'
         )
 
     def render_page_markdown(self, title: str, body: str, cfg: Dict[str, Any], frontmatter: str = "") -> str:

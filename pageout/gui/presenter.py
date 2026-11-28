@@ -1161,7 +1161,7 @@ class Presenter:
         # Percentage breakdown
         if total_ms > 0:
             lines.append("Percentage Breakdown:")
-            for label, key, _ in categories:
+            for label, key, _unit in categories:
                 cat = data.get(key, {})
                 ms = cat.get("total_ms", 0)
                 if ms > 0:
