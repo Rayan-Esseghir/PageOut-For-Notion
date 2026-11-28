@@ -11,14 +11,13 @@ Scheduled runs output logs to a log file.
 import json
 import os
 import platform
-import re
 import subprocess
 import sys
 import tempfile
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
-from typing import Dict, List, Optional, Any
 from enum import Enum
+from typing import Any, Dict, List, Optional
 
 
 def _get_config_dir() -> str:
@@ -27,6 +26,7 @@ def _get_config_dir() -> str:
     This function imports at call time to allow monkeypatching in tests.
     """
     from pageout.core.config import CONFIG_DIR as config_dir
+
     return config_dir
 
 
@@ -37,6 +37,7 @@ def _get_schedule_file() -> str:
 
 class ScheduleStatus(Enum):
     """Status of a scheduled task."""
+
     ACTIVE = "active"
     DISABLED = "disabled"
     ERROR = "error"
@@ -45,6 +46,7 @@ class ScheduleStatus(Enum):
 @dataclass
 class ScheduledTask:
     """A scheduled export job."""
+
     id: str
     name: str
     source: str
@@ -243,6 +245,7 @@ def schedule_exists(name: str) -> bool:
 
 # Platform-specific scheduling functions
 
+
 def get_platform() -> str:
     """Get the current platform identifier."""
     system = platform.system().lower()
@@ -258,6 +261,7 @@ def get_platform() -> str:
 def is_windows_admin() -> bool:
     """Check if running with admin privileges on Windows."""
     import ctypes
+
     try:
         return ctypes.windll.shell32.IsUserAnAdmin() != 0
     except Exception:
@@ -274,12 +278,17 @@ def _add_windows_task(task: ScheduledTask) -> bool:
         task_name = f"PageOut-{task.name}"
 
         # Build the command to run
-        python_exe = sys.executable if 'sys' in dir() else "python"
+        python_exe = sys.executable if "sys" in dir() else "python"
         cmd_parts = [
-            "pageout", "export", task.source,
-            "-o", task.output_dir,
-            "-f", ",".join(task.formats),
-            "--token", os.environ.get("NOTION_TOKEN", ""),
+            "pageout",
+            "export",
+            task.source,
+            "-o",
+            task.output_dir,
+            "-f",
+            ",".join(task.formats),
+            "--token",
+            os.environ.get("NOTION_TOKEN", ""),
         ]
 
         # Add filter/sort settings if configured
@@ -292,7 +301,7 @@ def _add_windows_task(task: ScheduledTask) -> bool:
         if task.sort_by:
             cmd_parts.extend(["--set", f"sort_by={task.sort_by}"])
         if task.sort_desc:
-            cmd_parts.extend(["--set", f"sort_desc=True"])
+            cmd_parts.extend(["--set", "sort_desc=True"])
         if task.group_by:
             cmd_parts.extend(["--set", f"group_by={task.group_by}"])
 
@@ -304,11 +313,16 @@ def _add_windows_task(task: ScheduledTask) -> bool:
 
         # Build schtasks command
         schtasks_cmd = [
-            "schtasks", "/Create",
-            "/TN", task_name,
-            "/TR", f'"{command}"',
-            "/SC", "DAILY",  # Default to daily
-            "/RU", "SYSTEM",  # Run as system context
+            "schtasks",
+            "/Create",
+            "/TN",
+            task_name,
+            "/TR",
+            f'"{command}"',
+            "/SC",
+            "DAILY",  # Default to daily
+            "/RU",
+            "SYSTEM",  # Run as system context
         ]
 
         # Simple mapping for schedule
@@ -326,13 +340,15 @@ def _add_windows_task(task: ScheduledTask) -> bool:
 def _add_unix_cron(task: ScheduledTask) -> bool:
     """Add a Unix cron job for the scheduled task."""
     try:
-        import shlex
-
         # Build the command
         cmd_parts = [
-            "pageout", "export", task.source,
-            "-o", task.output_dir,
-            "-f", ",".join(task.formats),
+            "pageout",
+            "export",
+            task.source,
+            "-o",
+            task.output_dir,
+            "-f",
+            ",".join(task.formats),
         ]
 
         # Add filter/sort settings if configured
@@ -345,7 +361,7 @@ def _add_unix_cron(task: ScheduledTask) -> bool:
         if task.sort_by:
             cmd_parts.extend(["--set", f"sort_by={task.sort_by}"])
         if task.sort_desc:
-            cmd_parts.extend(["--set", f"sort_desc=True"])
+            cmd_parts.extend(["--set", "sort_desc=True"])
         if task.group_by:
             cmd_parts.extend(["--set", f"group_by={task.group_by}"])
 
@@ -361,14 +377,14 @@ def _add_unix_cron(task: ScheduledTask) -> bool:
 
         # Check if cron entry already exists
         cron_line = f"# PageOut schedule: {task.name}\n{task.schedule} {command} >> {task.log_file} 2>&1\n"
-        if cron_line.split('\n')[1] in current_cron:
+        if cron_line.split("\n")[1] in current_cron:
             return True  # Already exists
 
         # Add new cron entry
         new_cron = current_cron.rstrip() + "\n" + cron_line
 
         # Install new crontab
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.crontab', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".crontab", delete=False) as f:
             f.write(new_cron)
             cron_file = f.name
 
@@ -384,10 +400,7 @@ def remove_windows_task(task: ScheduledTask) -> bool:
     """Remove a Windows scheduled task."""
     try:
         task_name = f"PageOut-{task.name}"
-        result = subprocess.run(
-            ["schtasks", "/Delete", "/TN", task_name, "/F"],
-            capture_output=True, text=True
-        )
+        result = subprocess.run(["schtasks", "/Delete", "/TN", task_name, "/F"], capture_output=True, text=True)
         return result.returncode == 0
     except Exception:
         return False
@@ -400,7 +413,7 @@ def remove_unix_cron(task: ScheduledTask) -> bool:
         if result.returncode != 0:
             return True  # No crontab exists
 
-        lines = result.stdout.split('\n')
+        lines = result.stdout.split("\n")
         cron_lines = []
         skip_next = False
 
@@ -416,9 +429,9 @@ def remove_unix_cron(task: ScheduledTask) -> bool:
                 continue
             cron_lines.append(line)
 
-        new_cron = '\n'.join(cron_lines)
+        new_cron = "\n".join(cron_lines)
 
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.crontab', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".crontab", delete=False) as f:
             f.write(new_cron)
             cron_file = f.name
 
@@ -499,14 +512,16 @@ def get_scheduled_tasks() -> List[Dict[str, Any]]:
     schedules = list_schedules()
     result = []
     for s in schedules:
-        result.append({
-            "id": s.id,
-            "name": s.name,
-            "source": s.source[:50] + "..." if len(s.source) > 50 else s.source,
-            "schedule": s.schedule,
-            "status": s.status.value,
-            "last_run": s.last_run or "never",
-        })
+        result.append(
+            {
+                "id": s.id,
+                "name": s.name,
+                "source": s.source[:50] + "..." if len(s.source) > 50 else s.source,
+                "schedule": s.schedule,
+                "status": s.status.value,
+                "last_run": s.last_run or "never",
+            }
+        )
     return result
 
 

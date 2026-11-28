@@ -5,7 +5,7 @@ Contains reusable widget components used across multiple tabs.
 
 import tkinter as tk
 from tkinter import colorchooser, ttk
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, List, Optional, Tuple
 
 # Import constants from config for font handling
 from pageout.core.config import FONT_CATALOG, SAME_AS_BODY
@@ -64,9 +64,7 @@ class CheckList(ttk.Frame):
         # Get background color for theme awareness
         bg = ttk.Style().lookup("TFrame", "background") or "#ffffff"
         if not labels:
-            tk.Label(self.inner, text=self.empty_text, bg=bg, fg="#888888", anchor="w").pack(
-                fill="x", padx=8, pady=8
-            )
+            tk.Label(self.inner, text=self.empty_text, bg=bg, fg="#888888", anchor="w").pack(fill="x", padx=8, pady=8)
         for lab in labels:
             v = tk.BooleanVar(value=checked)
             v.trace_add("write", self._update)
@@ -113,8 +111,15 @@ class FontPicker(tk.Toplevel):
     SAMPLE = "The quick brown fox 0123456789  —  مرحبا بالعالم"
     PREVIEW_TEXT_AR = "مرحبا بالعالم"
 
-    def __init__(self, app, current, allow_same, on_pick, favorites: Optional[List[str]] = None,
-                 recent: Optional[List[str]] = None):
+    def __init__(
+        self,
+        app,
+        current,
+        allow_same,
+        on_pick,
+        favorites: Optional[List[str]] = None,
+        recent: Optional[List[str]] = None,
+    ):
         """
         Args:
             app: Reference to the main App
@@ -202,8 +207,14 @@ class FontPicker(tk.Toplevel):
 
         # Preview with Arabic text
         self.preview_ar = tk.Label(
-            preview_frame, text=self.PREVIEW_TEXT_AR, bg="white", relief="solid", borderwidth=1, height=1,
-            font=("", 16), fg="#6b7280"
+            preview_frame,
+            text=self.PREVIEW_TEXT_AR,
+            bg="white",
+            relief="solid",
+            borderwidth=1,
+            height=1,
+            font=("", 16),
+            fg="#6b7280",
         )
         self.preview_ar.pack(fill="x", pady=2)
 
@@ -212,8 +223,9 @@ class FontPicker(tk.Toplevel):
         size_frame.pack(fill="x", pady=2)
         ttk.Label(size_frame, text=_("font_size_label")).pack(side="left")
         self.size_var = tk.IntVar(value=12)
-        size_spin = ttk.Spinbox(size_frame, from_=8, to=72, textvariable=self.size_var, width=5,
-                                command=self._update_preview_size)
+        size_spin = ttk.Spinbox(
+            size_frame, from_=8, to=72, textvariable=self.size_var, width=5, command=self._update_preview_size
+        )
         size_spin.pack(side="left", padx=4)
         self.size_var.trace_add("write", lambda *_: self._update_preview_size())
 
@@ -306,9 +318,7 @@ class Frame(ttk.Frame):
         except Exception:
             pass
 
-    def add_label(
-        self, row: int, column: int, text: str, **kwargs
-    ) -> ttk.Label:
+    def add_label(self, row: int, column: int, text: str, **kwargs) -> ttk.Label:
         """Add a labeled widget pair."""
         label = ttk.Label(self, text=text)
         label.grid(row=row, column=column, sticky="ne", padx=(0, 12), pady=kwargs.get("pady", 4))
@@ -325,9 +335,7 @@ class Frame(ttk.Frame):
         narrow: bool = False,
     ) -> Any:
         """Place a widget in the grid."""
-        widget.grid(
-            row=row, column=column, sticky=sticky, padx=padx, pady=pady
-        )
+        widget.grid(row=row, column=column, sticky=sticky, padx=padx, pady=pady)
         if narrow:
             widget._narrow = True
         return widget
@@ -335,24 +343,27 @@ class Frame(ttk.Frame):
     def add_separator(self, row: int, column: int, columnspan: int = 2, **kwargs):
         """Add a horizontal separator."""
         ttk.Separator(self, orient="horizontal").grid(
-            row=row, column=0, columnspan=columnspan, sticky="we", padx=kwargs.get("padx", 8), pady=kwargs.get("pady", 8)
+            row=row,
+            column=0,
+            columnspan=columnspan,
+            sticky="we",
+            padx=kwargs.get("padx", 8),
+            pady=kwargs.get("pady", 8),
         )
 
     def add_section_label(self, row: int, text: str) -> ttk.Label:
         """Add a bold section header label."""
-        label = ttk.Label(
-            self, text=text, font=("", 9, "bold"), foreground="#555"
-        )
-        label.grid(
-            row=row, column=0, columnspan=2, sticky="w", padx=8, pady=(10, 2)
-        )
+        label = ttk.Label(self, text=text, font=("", 9, "bold"), foreground="#555")
+        label.grid(row=row, column=0, columnspan=2, sticky="w", padx=8, pady=(10, 2))
         return label
 
 
 class SidebarNav(ttk.Frame):
     """Sidebar navigation widget replacing horizontal tabs."""
 
-    def __init__(self, parent, items: List[Tuple[str, str]], command: Callable = None, on_select: Callable = None, **kwargs):
+    def __init__(
+        self, parent, items: List[Tuple[str, str]], command: Callable = None, on_select: Callable = None, **kwargs
+    ):
         """
         Args:
             parent: Parent widget
@@ -373,9 +384,10 @@ class SidebarNav(ttk.Frame):
         style = ttk.Style()
         try:
             style.configure("Sidebar.TButton", anchor="w", padding=(12, 8), font=("", 10))
-            style.map("Sidebar.TButton",
+            style.map(
+                "Sidebar.TButton",
                 background=[("pressed", "#dbeafe"), ("active", "#eff6ff")],
-                foreground=[("pressed", "#1d4ed8"), ("active", "#2563eb")]
+                foreground=[("pressed", "#1d4ed8"), ("active", "#2563eb")],
             )
         except Exception:
             pass
@@ -426,7 +438,15 @@ class SidebarNav(ttk.Frame):
 class ThemeSelector(ttk.Frame):
     """Theme selector widget (Light/Dark/System) supporting either theme_manager or variable."""
 
-    def __init__(self, parent, theme_manager=None, variable: Optional[tk.Variable] = None, command: Optional[Callable] = None, on_change: Optional[Callable] = None, **kwargs):
+    def __init__(
+        self,
+        parent,
+        theme_manager=None,
+        variable: Optional[tk.Variable] = None,
+        command: Optional[Callable] = None,
+        on_change: Optional[Callable] = None,
+        **kwargs,
+    ):
         super().__init__(parent, **kwargs)
         self.theme_manager = theme_manager
         self.on_change = command or on_change
@@ -460,7 +480,15 @@ class ThemeSelector(ttk.Frame):
 class UIScaleSelector(ttk.Frame):
     """UI Scale selector widget supporting either theme_manager or variable."""
 
-    def __init__(self, parent, theme_manager=None, variable: Optional[tk.Variable] = None, command: Optional[Callable] = None, on_change: Optional[Callable] = None, **kwargs):
+    def __init__(
+        self,
+        parent,
+        theme_manager=None,
+        variable: Optional[tk.Variable] = None,
+        command: Optional[Callable] = None,
+        on_change: Optional[Callable] = None,
+        **kwargs,
+    ):
         super().__init__(parent, **kwargs)
         self.theme_manager = theme_manager
         self.on_change = command or on_change
@@ -499,8 +527,9 @@ class UIScaleSelector(ttk.Frame):
 class ColorPicker(ttk.Frame):
     """Enhanced color picker widget with color history, favorites, and contrast checking."""
 
-    def __init__(self, parent, variable: tk.Variable, on_pick: Optional[Callable] = None,
-                 bg_color: str = "#ffffff", **kwargs):
+    def __init__(
+        self, parent, variable: tk.Variable, on_pick: Optional[Callable] = None, bg_color: str = "#ffffff", **kwargs
+    ):
         """
         Args:
             parent: Parent widget
@@ -518,15 +547,17 @@ class ColorPicker(ttk.Frame):
     @staticmethod
     def _hex_to_rgb(hex_color: str) -> tuple:
         """Convert hex color to RGB tuple."""
-        hex_color = hex_color.lstrip('#')
-        return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+        hex_color = hex_color.lstrip("#")
+        return tuple(int(hex_color[i : i + 2], 16) for i in (0, 2, 4))
 
     @staticmethod
     def _luminance(rgb: tuple) -> float:
         """Calculate relative luminance of RGB color."""
+
         def channel(c):
             c = c / 255.0
             return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+
         r, g, b = rgb
         return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b)
 
@@ -580,7 +611,7 @@ class ColorPicker(ttk.Frame):
                 height=1,
                 relief="solid",
                 borderwidth=1,
-                command=lambda c=color: self._set_color(c)
+                command=lambda c=color: self._set_color(c),
             )
             btn.pack(side="left", padx=2)
             # Add tooltip with color value
@@ -597,18 +628,15 @@ class ColorPicker(ttk.Frame):
             ratio = self.contrast_ratio(color, self.bg_color)
             if ratio >= 4.5:
                 self.contrast_label.config(
-                    text=f"✓ {_('color_contrast_acceptable')} ({ratio:.1f}:1)",
-                    foreground="#16a34a"
+                    text=f"✓ {_('color_contrast_acceptable')} ({ratio:.1f}:1)", foreground="#16a34a"
                 )
             elif ratio >= 3.0:
                 self.contrast_label.config(
-                    text=f"⚠ {_('color_contrast_insufficient')} ({ratio:.1f}:1)",
-                    foreground="#d97706"
+                    text=f"⚠ {_('color_contrast_insufficient')} ({ratio:.1f}:1)", foreground="#d97706"
                 )
             else:
                 self.contrast_label.config(
-                    text=f"✗ {_('color_contrast_insufficient')} ({ratio:.1f}:1)",
-                    foreground="#dc2626"
+                    text=f"✗ {_('color_contrast_insufficient')} ({ratio:.1f}:1)", foreground="#dc2626"
                 )
         except Exception:
             pass
@@ -694,7 +722,9 @@ class ToolTip:
         self.tooltip = tk.Toplevel(self.widget)
         self.tooltip.wm_overrideredirect(True)
         self.tooltip.wm_geometry(f"+{x}+{y}")
-        label = tk.Label(self.tooltip, text=self.text, background="#ffffcc", relief="solid", borderwidth=1, padx=4, pady=2)
+        label = tk.Label(
+            self.tooltip, text=self.text, background="#ffffcc", relief="solid", borderwidth=1, padx=4, pady=2
+        )
         label.pack()
 
     def _hide_tooltip(self):
@@ -703,12 +733,8 @@ class ToolTip:
             self.tooltip = None
 
 
-def add_font_field(
-    g: Any, key: str, label_text: str, app: Any, allow_same: bool = False, hint: Optional[str] = None
-):
+def add_font_field(g: Any, key: str, label_text: str, app: Any, allow_same: bool = False, hint: Optional[str] = None):
     """Add a font picker field to a group frame."""
-    import pageout.gui.theme as theme_mod
-    from pageout.gui.theme import FONT_CATALOG
 
     fr = ttk.Frame(g)
     ent = ttk.Entry(fr, textvariable=app.V[key])
@@ -717,7 +743,7 @@ def add_font_field(
     def refresh(*_):
         name = app.V[key].get()
         try:
-            from pageout.gui.theme import FONT_CATALOG, FONT_CATEGORY, GOOGLE_FONTS, SAME_AS_BODY
+            from pageout.gui.theme import FONT_CATEGORY, GOOGLE_FONTS, SAME_AS_BODY
 
             # Check if this is "Same as body" or a known font
             if name == SAME_AS_BODY:
@@ -745,10 +771,8 @@ def add_font_field(
     generic_aliases = {"Sans-serif": "Helvetica", "Serif": "Times", "Monospace": "Courier"}
 
     # Determine font family
-    from pageout.gui.theme import FONT_CATEGORY, GOOGLE_FONTS, SAME_AS_BODY
 
     def choose():
-        from pageout.gui.i18n import EN
 
         FontPicker(app, app.V[key].get(), allow_same, lambda n: app.V[key].set(n))
 
@@ -758,17 +782,13 @@ def add_font_field(
     return fr, ent
 
 
-def add_checkbox(
-    parent: Any, text: str, variable: tk.Variable
-) -> ttk.Checkbutton:
+def add_checkbox(parent: Any, text: str, variable: tk.Variable) -> ttk.Checkbutton:
     """Add a styled checkbox."""
     cb = ttk.Checkbutton(parent, text=text, variable=variable)
     return cb
 
 
-def add_spinbox(
-    parent: Any, key: str, lo: float, hi: float, inc: float = 1, width: int = 8
-) -> ttk.Spinbox:
+def add_spinbox(parent: Any, key: str, lo: float, hi: float, inc: float = 1, width: int = 8) -> ttk.Spinbox:
     """Add a spinbox widget."""
     return ttk.Spinbox(parent, from_=lo, to=hi, increment=inc, textvariable=parent.V[key], width=width)
 
@@ -783,9 +803,7 @@ def add_combobox(
     return cb
 
 
-def add_file_browse(
-    parent: Any, variable: tk.Variable, button_text: str = "Browse…", title: str = "Choose"
-) -> None:
+def add_file_browse(parent: Any, variable: tk.Variable, button_text: str = "Browse…", title: str = "Choose") -> None:
     """Add a file browse button."""
     from tkinter import filedialog
 
@@ -796,16 +814,18 @@ def add_file_browse(
                 filetypes=[("Images", "*.png *.jpg *.jpeg *.gif *.webp *.svg"), ("All files", "*.*")],
             )
         else:
-            p = filedialog.askdirectory(title=title) if "folder" in title.lower() else filedialog.askopenfilename(title=title)
+            p = (
+                filedialog.askdirectory(title=title)
+                if "folder" in title.lower()
+                else filedialog.askopenfilename(title=title)
+            )
         if p:
             variable.set(p)
 
     ttk.Button(parent, text=button_text, command=browse).pack(side="left", padx=(6, 0))
 
 
-def add_swatch(
-    parent: Any, variable: tk.Variable, label_text: str = "Swatch"
-) -> tk.Label:
+def add_swatch(parent: Any, variable: tk.Variable, label_text: str = "Swatch") -> tk.Label:
     """Add a color swatch display."""
     swatch = tk.Label(parent, width=4, relief="solid", borderwidth=1)
     try:
@@ -844,7 +864,7 @@ def create_tool_tip(widget: tk.Widget, text: str, delay: int = 500, app=None):
     """Create a tool tip for a widget."""
     tooltip = ToolTip(widget, text, delay)
     if app is not None:
-        if not hasattr(app, '_tooltips'):
+        if not hasattr(app, "_tooltips"):
             app._tooltips = []
         app._tooltips.append(tooltip)
     return tooltip

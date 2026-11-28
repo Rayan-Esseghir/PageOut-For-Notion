@@ -9,18 +9,18 @@ Provides:
 
 import json
 import os
-import time
 from dataclasses import dataclass, field
 from typing import Optional
-
 
 # ---------------------------------------------------------------------------
 # Safety confirmations
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class SafetyCheck:
     """Represents a single safety check result."""
+
     check_type: str  # "overwrite", "large_export", "cloud_folder", "long_path"
     requires_confirmation: bool
     message: str = ""
@@ -102,8 +102,7 @@ def check_cloud_folder(output_dir: str) -> SafetyCheck:
         return SafetyCheck(
             "cloud_folder",
             True,
-            f"Output folder appears to be cloud-synced ({output_dir}). "
-            "Files may sync slowly or conflict. Continue?",
+            f"Output folder appears to be cloud-synced ({output_dir}). Files may sync slowly or conflict. Continue?",
             {"path": output_dir},
         )
     return SafetyCheck("cloud_folder", False)
@@ -153,6 +152,7 @@ SESSION_BACKUP = os.path.join(SESSION_DIR, "session.backup.json")
 @dataclass
 class ExportSession:
     """Represents an in-progress or interrupted export session."""
+
     session_id: str
     started_at: float
     source: str
@@ -258,9 +258,11 @@ def recover_session_prompt() -> Optional[ExportSession]:
 # Accessibility helpers
 # ---------------------------------------------------------------------------
 
+
 def accessible_name(widget_key: str, lang: str = "en") -> str:
     """Get an accessible name for a widget based on its key."""
     from pageout.gui.i18n import get_string
+
     return get_string(widget_key, lang)
 
 
@@ -279,7 +281,6 @@ def set_accessible_name(widget, name: str) -> None:
 
 def is_rtl_language(lang: str) -> bool:
     """Check if language requires RTL layout."""
-    from pageout.gui.i18n import is_rtl
     # For direct checks, use inline logic
     return lang in ("ar", "he", "fa", "ur")
 
@@ -303,7 +304,6 @@ HIGH_CONTRAST_COLORS = {
 
 def apply_high_contrast(root) -> None:
     """Apply high-contrast theme to a Tk root window."""
-    import tkinter as tk
     from tkinter import ttk
 
     style = ttk.Style(root)
@@ -327,9 +327,9 @@ def apply_high_contrast(root) -> None:
 # Keyboard navigation helpers
 # ---------------------------------------------------------------------------
 
+
 def setup_keyboard_navigation(root) -> None:
     """Setup keyboard-only navigation helpers."""
-    import tkinter as tk
 
     # Tab order is handled by Tk, but we ensure all widgets are focusable
     def cycle_focus(event):

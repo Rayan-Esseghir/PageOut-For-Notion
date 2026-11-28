@@ -16,15 +16,15 @@ All cloud integrations use optional dependencies and follow the pattern:
 import os
 import shutil
 import subprocess
-import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Tuple, List, Dict, Any
+from typing import Any, Dict, List
 
 # Optional dependency: keyring for credential storage
 try:
     import keyring
+
     KEYRING_AVAILABLE = True
 except ImportError:
     keyring = None
@@ -37,6 +37,7 @@ SYNC_TARGETS = ["None", "Local folder", "Google Drive", "Dropbox", "S3", "Git re
 @dataclass
 class SyncResult:
     """Result of a sync operation."""
+
     success: bool
     target: str
     message: str = ""
@@ -47,6 +48,7 @@ class SyncResult:
 @dataclass
 class SyncReport:
     """Comprehensive sync report for an export."""
+
     target: str
     success: bool
     message: str = ""
@@ -92,6 +94,7 @@ def _count_files_in_directory(directory: str) -> int:
 # Local Folder Sync - copy to network/local shared folder
 # =============================================================================
 
+
 def sync_to_local_folder(source_dir: str, target_path: str, cfg: dict) -> SyncResult:
     """Sync export to a local or network folder via copy.
 
@@ -122,7 +125,7 @@ def sync_to_local_folder(source_dir: str, target_path: str, cfg: dict) -> SyncRe
 
         try:
             shutil.copytree(source_dir, dest_dir)
-        except Exception as e:
+        except Exception:
             # If destination exists, merge instead
             if os.path.exists(dest_dir):
                 for item in os.listdir(source_dir):
@@ -136,12 +139,7 @@ def sync_to_local_folder(source_dir: str, target_path: str, cfg: dict) -> SyncRe
                 raise
 
         files_synced = _count_files_in_directory(dest_dir)
-        return SyncResult(
-            True,
-            "Local folder",
-            f"Synced to {dest_dir}",
-            files_synced=files_synced
-        )
+        return SyncResult(True, "Local folder", f"Synced to {dest_dir}", files_synced=files_synced)
     except PermissionError as e:
         return SyncResult(False, "Local folder", f"Permission denied: {target_path}", error=str(e))
     except Exception as e:
@@ -151,6 +149,7 @@ def sync_to_local_folder(source_dir: str, target_path: str, cfg: dict) -> SyncRe
 # =============================================================================
 # Git Repository Sync
 # =============================================================================
+
 
 def sync_to_git(source_dir: str, branch: str, cfg: dict) -> SyncResult:
     """Sync export to a Git repository (commit + push).
@@ -173,11 +172,7 @@ def sync_to_git(source_dir: str, branch: str, cfg: dict) -> SyncResult:
         try:
             # Try to find git repo
             result = subprocess.run(
-                ["git", "rev-parse", "--git-dir"],
-                cwd=str(source_path),
-                capture_output=True,
-                text=True,
-                timeout=30
+                ["git", "rev-parse", "--git-dir"], cwd=str(source_path), capture_output=True, text=True, timeout=30
             )
 
             if result.returncode != 0:
@@ -185,11 +180,7 @@ def sync_to_git(source_dir: str, branch: str, cfg: dict) -> SyncResult:
 
             # Get the remote URL for messaging
             remote_result = subprocess.run(
-                ["git", "remote", "get-url", "origin"],
-                cwd=str(source_path),
-                capture_output=True,
-                text=True,
-                timeout=30
+                ["git", "remote", "get-url", "origin"], cwd=str(source_path), capture_output=True, text=True, timeout=30
             )
             remote_url = remote_result.stdout.strip() if remote_result.returncode == 0 else "unknown"
 
@@ -200,24 +191,14 @@ def sync_to_git(source_dir: str, branch: str, cfg: dict) -> SyncResult:
 
         # Stage all new/modified files
         try:
-            subprocess.run(
-                ["git", "add", "."],
-                cwd=str(source_path),
-                capture_output=True,
-                text=True,
-                timeout=60
-            )
+            subprocess.run(["git", "add", "."], cwd=str(source_path), capture_output=True, text=True, timeout=60)
         except subprocess.TimeoutExpired:
             return SyncResult(False, "Git repo", "Git add timed out", error="timeout")
 
         # Check if there's anything to commit
         try:
             status_result = subprocess.run(
-                ["git", "status", "--porcelain"],
-                cwd=str(source_path),
-                capture_output=True,
-                text=True,
-                timeout=30
+                ["git", "status", "--porcelain"], cwd=str(source_path), capture_output=True, text=True, timeout=30
             )
         except subprocess.TimeoutExpired:
             return SyncResult(False, "Git repo", "Git status timed out", error="timeout")
@@ -232,29 +213,24 @@ def sync_to_git(source_dir: str, branch: str, cfg: dict) -> SyncResult:
         # Commit
         try:
             commit_result = subprocess.run(
-                ["git", "commit", "-m", commit_msg],
-                cwd=str(source_path),
-                capture_output=True,
-                text=True,
-                timeout=60
+                ["git", "commit", "-m", commit_msg], cwd=str(source_path), capture_output=True, text=True, timeout=60
             )
         except subprocess.TimeoutExpired:
             return SyncResult(False, "Git repo", "Git commit timed out", error="timeout")
 
         if commit_result.returncode != 0:
             # Check if it's just "nothing to commit"
-            if "nothing to commit" in commit_result.stderr.lower() or "nothing to commit" in commit_result.stdout.lower():
+            if (
+                "nothing to commit" in commit_result.stderr.lower()
+                or "nothing to commit" in commit_result.stdout.lower()
+            ):
                 return SyncResult(True, "Git repo", "No changes to commit", files_synced=0)
             return SyncResult(False, "Git repo", f"Git commit failed: {commit_result.stderr}")
 
         # Push to remote
         try:
             push_result = subprocess.run(
-                ["git", "push", "origin", branch],
-                cwd=str(source_path),
-                capture_output=True,
-                text=True,
-                timeout=120
+                ["git", "push", "origin", branch], cwd=str(source_path), capture_output=True, text=True, timeout=120
             )
         except subprocess.TimeoutExpired:
             return SyncResult(False, "Git repo", "Git push timed out", error="timeout")
@@ -266,10 +242,7 @@ def sync_to_git(source_dir: str, branch: str, cfg: dict) -> SyncResult:
         files_synced = len([l for l in status_result.stdout.splitlines() if l.strip()])
 
         return SyncResult(
-            True,
-            "Git repo",
-            f"Committed and pushed to {branch} ({remote_url})",
-            files_synced=files_synced
+            True, "Git repo", f"Committed and pushed to {branch} ({remote_url})", files_synced=files_synced
         )
     except Exception as e:
         return SyncResult(False, "Git repo", f"Sync failed: {e}", error=str(e))
@@ -278,6 +251,7 @@ def sync_to_git(source_dir: str, branch: str, cfg: dict) -> SyncResult:
 # =============================================================================
 # Google Drive Sync
 # =============================================================================
+
 
 def sync_to_gdrive(source_dir: str, folder_id: str, cfg: dict) -> SyncResult:
     """Sync export to Google Drive using Google Drive API.
@@ -296,10 +270,10 @@ def sync_to_gdrive(source_dir: str, folder_id: str, cfg: dict) -> SyncResult:
     try:
         # Check for required packages
         try:
+            from google.auth.transport.requests import Request
             from google.oauth2.credentials import Credentials
             from googleapiclient.discovery import build
             from googleapiclient.http import MediaFileUpload
-            from google.auth.transport.requests import Request
         except ImportError:
             return SyncResult(False, "Google Drive", "google-auth and google-api-python-client not installed")
     except Exception as e:
@@ -315,7 +289,11 @@ def sync_to_gdrive(source_dir: str, folder_id: str, cfg: dict) -> SyncResult:
         # In production, you'd want to do OAuth2 flow for user consent
         token = get_credential("GDRIVE_TOKEN")
         if not token:
-            return SyncResult(False, "Google Drive", "Google Drive token not configured (set GDRIVE_TOKEN in environment or store in keyring)")
+            return SyncResult(
+                False,
+                "Google Drive",
+                "Google Drive token not configured (set GDRIVE_TOKEN in environment or store in keyring)",
+            )
 
         # Parse the token (assumes it's a valid access token)
         creds = Credentials(token)
@@ -328,7 +306,7 @@ def sync_to_gdrive(source_dir: str, folder_id: str, cfg: dict) -> SyncResult:
                 return SyncResult(False, "Google Drive", f"Token refresh failed: {e}")
 
         # Build the service
-        service = build('drive', 'v3', credentials=creds)
+        service = build("drive", "v3", credentials=creds)
 
         if not os.path.exists(source_dir):
             return SyncResult(False, "Google Drive", f"Source directory does not exist: {source_dir}")
@@ -341,19 +319,12 @@ def sync_to_gdrive(source_dir: str, folder_id: str, cfg: dict) -> SyncResult:
             for file_path in source_path.rglob(f"*{ext}"):
                 try:
                     # Create file in Google Drive
-                    file_metadata = {
-                        'name': file_path.name,
-                        'parents': [folder_id]
-                    }
+                    file_metadata = {"name": file_path.name, "parents": [folder_id]}
                     media = MediaFileUpload(str(file_path), resumable=True)
 
-                    service.files().create(
-                        body=file_metadata,
-                        media_body=media,
-                        fields='id'
-                    ).execute()
+                    service.files().create(body=file_metadata, media_body=media, fields="id").execute()
                     files_synced += 1
-                except Exception as e:
+                except Exception:
                     # Log error but continue with other files
                     pass
 
@@ -361,7 +332,7 @@ def sync_to_gdrive(source_dir: str, folder_id: str, cfg: dict) -> SyncResult:
             True,
             "Google Drive",
             f"Synced {files_synced} files to Google Drive folder {folder_id}",
-            files_synced=files_synced
+            files_synced=files_synced,
         )
     except Exception as e:
         return SyncResult(False, "Google Drive", f"Sync failed: {e}", error=str(e))
@@ -370,6 +341,7 @@ def sync_to_gdrive(source_dir: str, folder_id: str, cfg: dict) -> SyncResult:
 # =============================================================================
 # Dropbox Sync
 # =============================================================================
+
 
 def sync_to_dropbox(source_dir: str, dropbox_path: str, cfg: dict) -> SyncResult:
     """Sync export to Dropbox using Dropbox API.
@@ -402,7 +374,9 @@ def sync_to_dropbox(source_dir: str, dropbox_path: str, cfg: dict) -> SyncResult
 
         token = get_credential("DROPBOX_TOKEN")
         if not token:
-            return SyncResult(False, "Dropbox", "Dropbox token not configured (set DROPBOX_TOKEN in environment or store in keyring)")
+            return SyncResult(
+                False, "Dropbox", "Dropbox token not configured (set DROPBOX_TOKEN in environment or store in keyring)"
+            )
 
         # Create Dropbox client
         dbx = dropbox.Dropbox(token)
@@ -420,8 +394,8 @@ def sync_to_dropbox(source_dir: str, dropbox_path: str, cfg: dict) -> SyncResult
         files_synced = 0
 
         # Ensure dropbox_path starts with /
-        if not dropbox_path.startswith('/'):
-            dropbox_path = '/' + dropbox_path
+        if not dropbox_path.startswith("/"):
+            dropbox_path = "/" + dropbox_path
 
         # Upload files to Dropbox
         for ext in [".pdf", ".html", ".md", ".txt", ".docx", ".json", ".tex", ".rst", ".adoc", ".epub"]:
@@ -429,21 +403,18 @@ def sync_to_dropbox(source_dir: str, dropbox_path: str, cfg: dict) -> SyncResult
                 try:
                     # Calculate Dropbox path
                     relative = file_path.relative_to(source_path)
-                    dbx_path = dropbox_path + '/' + str(relative)
+                    dbx_path = dropbox_path + "/" + str(relative)
 
                     # Upload file
-                    with open(file_path, 'rb') as f:
+                    with open(file_path, "rb") as f:
                         dbx.files_upload(f.read(), dbx_path, mode=dropbox.files.WriteMode.overwrite)
                     files_synced += 1
-                except Exception as e:
+                except Exception:
                     # Log error but continue
                     pass
 
         return SyncResult(
-            True,
-            "Dropbox",
-            f"Synced {files_synced} files to Dropbox at {dropbox_path}",
-            files_synced=files_synced
+            True, "Dropbox", f"Synced {files_synced} files to Dropbox at {dropbox_path}", files_synced=files_synced
         )
     except Exception as e:
         return SyncResult(False, "Dropbox", f"Sync failed: {e}", error=str(e))
@@ -452,6 +423,7 @@ def sync_to_dropbox(source_dir: str, dropbox_path: str, cfg: dict) -> SyncResult
 # =============================================================================
 # Amazon S3 Sync
 # =============================================================================
+
 
 def sync_to_s3(source_dir: str, bucket: str, prefix: str, cfg: dict) -> SyncResult:
     """Sync export to Amazon S3 using boto3.
@@ -481,15 +453,17 @@ def sync_to_s3(source_dir: str, bucket: str, prefix: str, cfg: dict) -> SyncResu
     try:
         # Get credentials from keyring or environment
         aws_access_key = _get_secret("PageOut for Notion", "AWS_ACCESS_KEY_ID") or _get_env_secret("AWS_ACCESS_KEY_ID")
-        aws_secret_key = _get_secret("PageOut for Notion", "AWS_SECRET_ACCESS_KEY") or _get_env_secret("AWS_SECRET_ACCESS_KEY")
+        aws_secret_key = _get_secret("PageOut for Notion", "AWS_SECRET_ACCESS_KEY") or _get_env_secret(
+            "AWS_SECRET_ACCESS_KEY"
+        )
 
         session_kwargs = {}
         if aws_access_key and aws_secret_key:
-            session_kwargs['aws_access_key_id'] = aws_access_key
-            session_kwargs['aws_secret_access_key'] = aws_secret_key
+            session_kwargs["aws_access_key_id"] = aws_access_key
+            session_kwargs["aws_secret_access_key"] = aws_secret_key
 
         # Create S3 client (uses default credential chain if keys not provided)
-        s3 = boto3.client('s3', **session_kwargs)
+        s3 = boto3.client("s3", **session_kwargs)
 
         if not os.path.exists(source_dir):
             return SyncResult(False, "S3", f"Source directory does not exist: {source_dir}")
@@ -498,8 +472,8 @@ def sync_to_s3(source_dir: str, bucket: str, prefix: str, cfg: dict) -> SyncResu
         files_synced = 0
 
         # Ensure prefix doesn't end with /
-        if prefix and not prefix.endswith('/'):
-            prefix = prefix + '/'
+        if prefix and not prefix.endswith("/"):
+            prefix = prefix + "/"
 
         # Upload files to S3
         for ext in [".pdf", ".html", ".md", ".txt", ".docx", ".json", ".tex", ".rst", ".adoc", ".epub"]:
@@ -507,23 +481,20 @@ def sync_to_s3(source_dir: str, bucket: str, prefix: str, cfg: dict) -> SyncResu
                 try:
                     # Calculate S3 key
                     relative = file_path.relative_to(source_path)
-                    s3_key = (prefix or '') + str(relative)
+                    s3_key = (prefix or "") + str(relative)
 
                     # Upload file
                     s3.upload_file(str(file_path), bucket, s3_key)
                     files_synced += 1
-                except ClientError as e:
+                except ClientError:
                     # Log error but continue
                     pass
-                except Exception as e:
+                except Exception:
                     # Continue with other files
                     pass
 
         return SyncResult(
-            True,
-            "S3",
-            f"Synced {files_synced} files to s3://{bucket}/{prefix}",
-            files_synced=files_synced
+            True, "S3", f"Synced {files_synced} files to s3://{bucket}/{prefix}", files_synced=files_synced
         )
     except Exception as e:
         return SyncResult(False, "S3", f"Sync failed: {e}", error=str(e))
@@ -532,6 +503,7 @@ def sync_to_s3(source_dir: str, bucket: str, prefix: str, cfg: dict) -> SyncResu
 # =============================================================================
 # Main Sync Dispatcher
 # =============================================================================
+
 
 def perform_sync(source_dir: str, sync_target: str, sync_config: dict, cfg: dict) -> SyncReport:
     """Perform sync operation based on target type.
@@ -549,64 +521,40 @@ def perform_sync(source_dir: str, sync_target: str, sync_config: dict, cfg: dict
         return SyncReport("None", True, "Sync disabled", 0)
 
     if not os.path.exists(source_dir):
-        return SyncReport(sync_target, False, "Source directory does not exist", 0,
-                         ["Source directory does not exist: " + source_dir])
+        return SyncReport(
+            sync_target, False, "Source directory does not exist", 0, ["Source directory does not exist: " + source_dir]
+        )
 
     timestamp = datetime.now().isoformat()
 
     if sync_target == "Local folder":
         result = sync_to_local_folder(source_dir, sync_config.get("sync_path", ""), cfg)
         return SyncReport(
-            result.target,
-            result.success,
-            result.message,
-            result.files_synced,
-            [result.error] if result.error else []
+            result.target, result.success, result.message, result.files_synced, [result.error] if result.error else []
         )
 
     elif sync_target == "Google Drive":
         result = sync_to_gdrive(source_dir, sync_config.get("gdrive_folder_id", ""), cfg)
         return SyncReport(
-            result.target,
-            result.success,
-            result.message,
-            result.files_synced,
-            [result.error] if result.error else []
+            result.target, result.success, result.message, result.files_synced, [result.error] if result.error else []
         )
 
     elif sync_target == "Dropbox":
         result = sync_to_dropbox(source_dir, sync_config.get("dropbox_path", "/exports"), cfg)
         return SyncReport(
-            result.target,
-            result.success,
-            result.message,
-            result.files_synced,
-            [result.error] if result.error else []
+            result.target, result.success, result.message, result.files_synced, [result.error] if result.error else []
         )
 
     elif sync_target == "S3":
-        result = sync_to_s3(
-            source_dir,
-            sync_config.get("s3_bucket", ""),
-            sync_config.get("s3_prefix", "exports"),
-            cfg
-        )
+        result = sync_to_s3(source_dir, sync_config.get("s3_bucket", ""), sync_config.get("s3_prefix", "exports"), cfg)
         return SyncReport(
-            result.target,
-            result.success,
-            result.message,
-            result.files_synced,
-            [result.error] if result.error else []
+            result.target, result.success, result.message, result.files_synced, [result.error] if result.error else []
         )
 
     elif sync_target == "Git repo":
         result = sync_to_git(source_dir, sync_config.get("sync_branch", "main"), cfg)
         return SyncReport(
-            result.target,
-            result.success,
-            result.message,
-            result.files_synced,
-            [result.error] if result.error else []
+            result.target, result.success, result.message, result.files_synced, [result.error] if result.error else []
         )
 
     else:

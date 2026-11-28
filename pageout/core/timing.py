@@ -3,12 +3,13 @@
 import json
 import time
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Optional
 
 
 @dataclass
 class TimingStats:
     """Statistics for a single timing category."""
+
     count: int = 0
     total_ms: float = 0.0
     bytes_downloaded: int = 0
@@ -30,6 +31,7 @@ class TimingReport:
     - merge: PDF merging
     - other: everything else (tree building, rendering, etc.)
     """
+
     notion_api: TimingStats = field(default_factory=TimingStats)
     images: TimingStats = field(default_factory=TimingStats)
     pdf: TimingStats = field(default_factory=TimingStats)
@@ -79,8 +81,11 @@ class TimingReport:
         "Notion 62% · images 20% · PDF 15% · other 3%"
         """
         total_ms = (
-            self.notion_api.total_ms + self.images.total_ms +
-            self.pdf.total_ms + self.merge.total_ms + self.other.total_ms
+            self.notion_api.total_ms
+            + self.images.total_ms
+            + self.pdf.total_ms
+            + self.merge.total_ms
+            + self.other.total_ms
         )
 
         if total_ms == 0:
@@ -136,7 +141,7 @@ def reset_timer():
     _timing = None
 
 
-def start_timer(cfg: dict) -> 'TimingReport':
+def start_timer(cfg: dict) -> "TimingReport":
     """Initialize timing for a new export run."""
     global _timing
     _timing = TimingReport()
@@ -182,4 +187,5 @@ def set_api_timing(timing: TimingReport):
     _timing = timing
     # Also update the notion_api module's reference
     from pageout.sources import notion_api
+
     notion_api._api_timing = timing

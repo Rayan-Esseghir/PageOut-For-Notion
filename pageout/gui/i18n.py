@@ -4,14 +4,13 @@ This module provides string translation support for the PageOut GUI.
 Strings are stored as simple Python dicts keyed by language code.
 """
 
-from typing import Dict, Optional
+from typing import Optional
 
 # English strings - all UI text goes here
 EN = {
     # Main window
     "title_prefix": "PageOut",
     "status_bar": "Follow the tabs 1 → 8, then press Export. Only tabs 1 and 8 are required.",
-
     # Tabs
     "tab_source": "1  Source",
     "tab_pages": "2  Pages",
@@ -21,7 +20,6 @@ EN = {
     "tab_pdf": "6  PDF",
     "tab_latex": "7  LaTeX & AI",
     "tab_output": "8  Output",
-
     # Source tab - Notion connection
     "integration_token": "Integration token",
     "show_token": "Show token",
@@ -36,7 +34,6 @@ EN = {
     "use_login": "Use my saved Notion login",
     "log_in_to_notion": "Log in to Notion…",
     "login_instructions": "A browser window opens: sign in, then close the window.",
-
     # Pages tab
     "choose_pages": "Choose which pages",
     "load_pages": "Load pages",
@@ -53,8 +50,7 @@ EN = {
     "name_format": "Name format",
     "examples": "Examples",
     "preview_names": "Preview names",
-    "name_hint": "Placeholders: {title} {date} {index} {created} {edited} {parent}\nClick \"Load properties\" to list your own.\nFormats: {date:%d-%m-%Y}   {title:40} (truncate)",
-
+    "name_hint": 'Placeholders: {title} {date} {index} {created} {edited} {parent}\nClick "Load properties" to list your own.\nFormats: {date:%d-%m-%Y}   {title:40} (truncate)',
     # Formats tab
     "export_as": "Export as (tick one or more)",
     "pdf": "PDF",
@@ -86,7 +82,6 @@ EN = {
     "index_page": "Index page",
     "table_props": "Table of properties",
     "csv_file": "CSV file",
-
     # Design tab
     "quick_style": "Quick style",
     "style_preset": "Style preset",
@@ -129,7 +124,6 @@ EN = {
     "light_theme": "Force light theme (Browser engine only)",
     "clean_layout": "Hide Notion sidebar / top bar (Browser engine only)",
     "custom_css": "Custom CSS (for experts)",
-
     # Images tab
     "images_inside": "Images inside documents",
     "handling": "Handling",
@@ -143,12 +137,11 @@ EN = {
     "one_per_page": "One image per page",
     "show_names": "Show image file names under images",
     "caption_format": "Caption format",
-    "save_images": "Saving image files (tick \"Images\" in tab 3)",
+    "save_images": 'Saving image files (tick "Images" in tab 3)',
     "file_name_format": "File name format",
     "image_examples": "Examples",
     "img_subfolder": "Put each page's images in its own folder",
     "img_cover": "Include page cover images",
-
     # PDF tab
     "page": "Page",
     "page_size": "Page size",
@@ -165,7 +158,6 @@ EN = {
     "bottom_right": "Bottom Right",
     "top_right": "Top Right",
     "format": "Format",
-
     # LaTeX & AI tab
     "latex": "LaTeX (.tex)",
     "export_latex": "Export as LaTeX (.tex) document (compile with pdflatex or xelatex for Arabic)",
@@ -182,7 +174,6 @@ EN = {
     "scan_images": "Scan images with Gemini Math OCR",
     "model": "Model",
     "keep_whiteboard": "Keep a note of the original image below the transcription",
-
     # Output tab
     "output_folder": "Output folder (required)",
     "pdf_output": "PDF output",
@@ -199,7 +190,6 @@ EN = {
     "extra_wait": "Extra wait per page (s)",
     "profile_timing": "Save timing_report.json with export profiling data",
     "browse": "Browse…",
-
     # Actions
     "export": "Export",
     "cancel": "Cancel",
@@ -208,12 +198,11 @@ EN = {
     "done": "Done",
     "exported": "page(s)",
     "unchanged": "unchanged page(s) skipped",
-    "force_reexport": "(tick \"Force full re-export\" to redo them)",
+    "force_reexport": '(tick "Force full re-export" to redo them)',
     "timing": "Timing",
     "problems": "problem(s)",
     "cancelled": "Cancelled. Files exported so far were kept.",
     "export_failed": "Export failed",
-
     # Dialogs
     "missing_info": "Missing info",
     "missing_info_msg": "Enter the Notion token and a database / page ID or URL.",
@@ -239,11 +228,9 @@ EN = {
     "secrets_not_saved": "Secrets not saved",
     "keyring_saving": "Keyring found: yes — secrets are stored in the OS credential store.",
     "no_keyring": "No OS keyring found (pip install keyring). Without it the token is not remembered unless you tick the box above.",
-
     # Status
     "nothing_selected": "(choose an output folder in tab 8)",
     "will_export": "Will export:",
-
     # Font picker
     "arabic_text": "The quick brown fox 0123456789  —  مرحبا بالعالم",
     "font_search": "Search:",
@@ -253,7 +240,6 @@ EN = {
     "sans_serif": "Sans-serif",
     "serif": "Serif",
     "monospace": "Monospace",
-
     # Error messages
     "invalid_format": "Unknown format",
     "choose_formats": "Choose from:",
@@ -268,10 +254,8 @@ EN = {
     "gemini_key_missing": "Math OCR with Gemini Vision is enabled, but no Gemini API Key was entered.",
     "gemini_key_instructions": "Please enter your Gemini API key in the 'LaTeX & OCR' tab.",
     "gemini_key_link": "You can get a free key at:\nhttps://aistudio.google.com/",
-
     # Font families
     "same_as_body": "Same as body",
-
     # === U2: Look & Navigation ===
     # Sidebar navigation
     "sidebar_source": "1  Source",
@@ -282,7 +266,6 @@ EN = {
     "sidebar_pdf": "6  PDF",
     "sidebar_latex": "7  LaTeX & AI",
     "sidebar_output": "8  Output",
-
     # Menu bar
     "menu_file": "File",
     "menu_profiles": "Profiles",
@@ -306,33 +289,27 @@ EN = {
     "menu_view_timing_report": "View Export Report…",
     "menu_about": "About…",
     "menu_shortcuts": "Keyboard Shortcuts…",
-
     # Timing report viewer
     "timing_report_title": "Export Timing Report",
     "timing_report_load": "Load Report…",
     "timing_report_no_data": "No timing data available.",
     "timing_report_total": "Total Time:",
     "timing_report_categories": "Categories:",
-
     # Simple/Advanced mode
     "simple_mode": "Simple Mode",
     "advanced_mode": "Advanced Mode",
     "mode_toggle": "Mode:",
-
     # Theme switching
     "theme_light": "Light",
     "theme_dark": "Dark",
     "theme_system": "System",
     "theme_label": "Theme:",
-
     # Status bar
     "status_ready": "Ready",
     "status_exporting": "Exporting…",
     "status_cancelled": "Cancelled",
-
     # Window state
     "window_geometry": "Window geometry",
-
     # Preferences dialog
     "preferences": "Preferences",
     "preferences_appearance": "Appearance",
@@ -342,7 +319,6 @@ EN = {
     "prefs_remember_window": "Remember window size & position",
     "prefs_confirm_exit": "Confirm on exit",
     "prefs_tooltip_delay": "Tooltip delay (ms):",
-
     # Shortcuts
     "shortcut_export": "Export",
     "shortcut_save": "Save Config",
@@ -358,7 +334,6 @@ EN = {
     "shortcut_cancel_help": "Cancel a running export operation",
     "shortcut_find_help": "Search in the log output",
     "shortcut_preferences_help": "Open the preferences dialog",
-
     # === U5: Settings UX ===
     # Preferences search
     "preferences_search": "Search settings:",
@@ -370,7 +345,6 @@ EN = {
     "preferences_reset_done": "All preferences have been reset to defaults.",
     "preferences_applied": "Preferences Saved",
     "preferences_applied_msg": "Your changes have been saved.",
-
     # Theme
     "theme_light": "Light",
     "theme_dark": "Dark",
@@ -378,21 +352,17 @@ EN = {
     "theme_label": "Theme:",
     "theme_help": "Switch between light, dark, or system-adaptive theme.",
     "theme_picker_help": "Choose theme from available options.",
-
     # Section header for Preferences dialogs
     "preferences_theme": "Theme Settings",
-
     # UI Scale
     "ui_scale": "UI Scale:",
     "ui_scale_help": "Adjust interface scaling for high-DPI displays. 1.0 = 100%.",
     "preferences_ui_scale": "UI Scale",
-
     # Accent color
     "accent_color": "Accent color",
     "accent_color_help": "Customize the accent color for buttons, links, and highlights.",
     "color_picker_title": "Choose Accent Color",
     "preferences_accent": "Accent Color",
-
     # Window management
     "preferences_window_section": "Window Management",
     "prefs_remember_window": "Remember window size & position",
@@ -400,15 +370,12 @@ EN = {
     "window_management_help": "Control how the application handles window state and behavior.",
     "prefs_tooltip_delay": "Tooltip delay (ms):",
     "tooltip_delay_help": "Delay before tooltips appear (in milliseconds).",
-
     # Auto-save section
     "preferences_auto_save_section": "Auto-save Settings",
     "prefs_auto_save": "Auto-save config on change",
     "prefs_auto_save_help": "Automatically save configuration changes when they occur.",
-
     # Shortcuts section
     "preferences_main_shortcuts": "Keyboard Shortcuts",
-
     # Font picker enhancements
     "font_favorites": "Favorites",
     "font_recent": "Recently Used",
@@ -417,17 +384,14 @@ EN = {
     "font_size_label": "Font size",
     "add_to_favorites": "Add to favorites",
     "remove_from_favorites": "Remove from favorites",
-
     # Color picker enhancements
     "color_favorites": "Color favorites",
     "color_contrast_warning": "Contrast warning",
     "color_contrast_insufficient": "Low contrast - text may be hard to read",
     "color_contrast_acceptable": "Contrast OK",
-
     # Reset per section
     "reset_section": "Reset",
     "section_modified": "● Modified",
-
     # === U6: Onboarding & Help ===
     # First-run wizard
     "first_run_wizard_title": "Welcome to PageOut",
@@ -452,7 +416,6 @@ EN = {
     "onboarding_back": "Back",
     "onboarding_finish": "Finish Setup",
     "onboarding_cancel": "Cancel",
-
     # Help menu items
     "check_my_setup": "Check my setup",
     "check_setup_title": "System Diagnostics",
@@ -461,7 +424,6 @@ EN = {
     "check_setup_done": "Diagnostics complete!",
     "check_setup_copy": "Copy diagnostics",
     "check_setup_copy_desc": "Copy diagnostics to clipboard (redacted)",
-
     # About dialog
     "about_title": "About PageOut for Notion",
     "about_version": "Version",
@@ -471,13 +433,11 @@ EN = {
     "about_license": "MIT License",
     "about_check_updates": "Check for updates",
     "about_copyright": "© 2024 Rayan Esseghir",
-
     # Diagnostics results
     "diag_status_ok": "OK",
     "diag_status_warning": "WARNING",
     "diag_status_error": "ERROR",
     "diag_status_info": "INFO",
-
     # Diagnostic check names
     "diag_python": "Python Version",
     "diag_os": "Operating System",
@@ -488,12 +448,10 @@ EN = {
     "diag_fonts": "Fonts",
     "diag_keyring": "OS Keyring",
     "diag_version": "App Version",
-
     # Additional U6 keys
     "first_run_complete_msg": "Setup complete! You can now start exporting your Notion pages.",
     "check_setup_copy_no_data": "No diagnostics data available.",
     "check_setup_copy_success": "Diagnostics copied to clipboard (secrets redacted).",
-
     # === Phase 12: Scheduling ===
     "menu_schedule": "Schedule",
     "schedule_menu_add": "Add Schedule",
@@ -531,11 +489,9 @@ EN = {
     "schedule_action_edit": "Edit",
     "schedule_column_id": "ID",
     "no_schedules": "No schedules configured yet.",
-
     # Source tab - additional labels
     "what_to_export": "What to export",
     "save_location": "Where to save",
-
     # Formats tab - additional labels
     "engine": "PDF Engine",
     "formats": "Export formats",
@@ -580,7 +536,6 @@ AR = {
     # Main window
     "title_prefix": "PageOut",
     "status_bar": "اتبع التبويبات 1 → 8، ثم اضغط على التصدير. فقط التبويبان 1 و 8 مطلوبان.",
-
     # Tabs
     "tab_source": "1  المصدر",
     "tab_pages": "2  الصفحات",
@@ -590,7 +545,6 @@ AR = {
     "tab_pdf": "6  PDF",
     "tab_latex": "7  LaTeX & AI",
     "tab_output": "8  الإخراج",
-
     # Source tab - Notion connection
     "integration_token": "رمز الاندماج",
     "show_token": "إظهار الرمز",
@@ -605,7 +559,6 @@ AR = {
     "use_login": "استخدام تسجيل الدخول المحفوظ الخاص بي",
     "log_in_to_notion": "تسجيل الدخول إلى Notion…",
     "login_instructions": "يتم فتح نافذة مراجعة: سجّل الدخول، ثم أغلق النافذة.",
-
     # Pages tab
     "choose_pages": "اختر الصفحات",
     "load_pages": "تحميل الصفحات",
@@ -622,8 +575,7 @@ AR = {
     "name_format": "تنسيق الاسم",
     "examples": "أمثلة",
     "preview_names": "معاينة الأسماء",
-    "name_hint": "المحاكاة: {title} {date} {index} {created} {edited} {parent}\nانقر على \"تحميل الخصائص\" لعرض خصائصك الخاصة.\nالتنسيقات: {date:%d-%m-%Y}   {title:40} (اقتباس)",
-
+    "name_hint": 'المحاكاة: {title} {date} {index} {created} {edited} {parent}\nانقر على "تحميل الخصائص" لعرض خصائصك الخاصة.\nالتنسيقات: {date:%d-%m-%Y}   {title:40} (اقتباس)',
     # Formats tab
     "export_as": "تصدير كـ (اختر واحد أو أكثر)",
     "pdf": "PDF",
@@ -655,7 +607,6 @@ AR = {
     "index_page": "صفحة فهرس",
     "table_props": "جدول الخصائص",
     "csv_file": "ملف CSV",
-
     # Design tab
     "quick_style": "نمط سريع",
     "style_preset": "مسبق التنسيق",
@@ -698,7 +649,6 @@ AR = {
     "light_theme": "فرض الوضع الفاتح (محرك PDF Browser فقط)",
     "clean_layout": "إخفاء الشريط الجانبي العلوي لـ Notion (محرك PDF Browser فقط)",
     "custom_css": "CSS مخصص (للمختصين)",
-
     # Images tab
     "images_inside": "الصور داخل المستندات",
     "handling": "معالجة",
@@ -712,12 +662,11 @@ AR = {
     "one_per_page": "صورة واحدة لكل صفحة",
     "show_names": "إظهار أسماء ملفات الصور تحت الصور",
     "caption_format": "تنسيق الشرح",
-    "save_images": "حفظ ملفات الصور (اختر \"Images\" في التبويب 3)",
+    "save_images": 'حفظ ملفات الصور (اختر "Images" في التبويب 3)',
     "file_name_format": "تنسيق اسم الملف",
     "image_examples": "أمثلة",
     "img_subfolder": "وضع كل صفحة في مجلدها الخاص",
     "img_cover": "تضمين تغطيات الصفحات",
-
     # PDF tab
     "page": "الصفحة",
     "page_size": "حجم الصفحة",
@@ -734,7 +683,6 @@ AR = {
     "bottom_right": "اليمين السفلي",
     "top_right": "اليمين العلوي",
     "format": "التنسيق",
-
     # LaTeX & AI tab
     "latex": "LaTeX (.tex)",
     "export_latex": "تصدير كـ LaTeX (.tex) (اكتب مع pdflatex أو xelatex للعربية)",
@@ -751,7 +699,6 @@ AR = {
     "scan_images": "مسح الصور مع Gemini Math OCR",
     "model": "النموذج",
     "keep_whiteboard": "حفظ ملاحظة بالصورة الأصلية أسفل النص",
-
     # Output tab
     "output_folder": "مجلد الإخراج (مطلوب)",
     "pdf_output": "إخراج PDF",
@@ -768,7 +715,6 @@ AR = {
     "extra_wait": "انتظار إضافي لكل صفحة (ث)",
     "profile_timing": "حفظ timing_report.json بيانات تصفح التنفيذ",
     "browse": "تصفح…",
-
     # Actions
     "export": "تصدير",
     "cancel": "إلغاء",
@@ -777,12 +723,11 @@ AR = {
     "done": "تم",
     "exported": "صفحة (ات)",
     "unchanged": "صفحة (ات) تم تخطيها",
-    "force_reexport": "(اختر \"إعادة التصدير الكاملة\" لإعادة التصدير)",
+    "force_reexport": '(اختر "إعادة التصدير الكاملة" لإعادة التصدير)',
     "timing": "الوقت",
     "problems": "مشكلة (ات)",
     "cancelled": "تم الإلغاء. تم الاحتفاظ بما تم تصديره.",
     "export_failed": "فشل التصدير",
-
     # Dialogs
     "missing_info": "معلومات ناقصة",
     "missing_info_msg": "أدخل رمز Notion وقيمة معرّف قاعدة البيانات أو الصفحة أو الرابط.",
@@ -808,11 +753,9 @@ AR = {
     "secrets_not_saved": "لم يتم حفظ الأسرار",
     "keyring_saving": "تم العثور على Keyring: نعم — يتم تخزين الأسرار في مخزن المفاتيح.",
     "no_keyring": "لم يتم العثور على OS keyring (pip install keyring). بدونه لا يُتذكر الرمز إلا إذا عُلمت.",
-
     # Status
     "nothing_selected": "(اختر مجلد إخراج في التبويب 8)",
     "will_export": "سيتم تصدير:",
-
     # Font picker
     "arabic_text": "The quick brown fox 0123456789  —  مرحبا بالعالم",
     "font_search": "بحث:",
@@ -822,7 +765,6 @@ AR = {
     "sans_serif": "Sans-serif",
     "serif": "Serif",
     "monospace": "Monospace",
-
     # Error messages
     "invalid_format": "تنسيق غير معروف",
     "choose_formats": "اختر من:",
@@ -837,10 +779,8 @@ AR = {
     "gemini_key_missing": "تم تمكين Math OCR مع Gemini Vision، لكن لم يتم إدخال مفتاح Gemini API.",
     "gemini_key_instructions": "يرجى إدخال مفتاح Gemini API في تبويب LaTeX & OCR.",
     "gemini_key_link": "يمكنك الحصول على مفتاح مجاني من:\nhttps://aistudio.google.com/",
-
     # Font families
     "same_as_body": "بنفس خط النص",
-
     # === U2: Look & Navigation ===
     # Sidebar navigation
     "sidebar_source": "1  المصدر",
@@ -851,7 +791,6 @@ AR = {
     "sidebar_pdf": "6  PDF",
     "sidebar_latex": "7  LaTeX & AI",
     "sidebar_output": "8  الإخراج",
-
     # Menu bar
     "menu_file": "ملف",
     "menu_profiles": "الملفات",
@@ -875,19 +814,16 @@ AR = {
     "menu_view_timing_report": "عرض تقرير التصدير…",
     "menu_about": "حول…",
     "menu_shortcuts": "اختصارات لوحة المفاتيح…",
-
     # Timing report viewer
     "timing_report_title": "تقرير تصفح التنفيذ",
     "timing_report_load": "تحميل التقرير…",
     "timing_report_no_data": "لا توجد بيانات وقت.",
     "timing_report_total": "الوقت الكلي:",
     "timing_report_categories": "الفئات:",
-
     # Simple/Advanced mode
     "simple_mode": "الوضع البسيط",
     "advanced_mode": "الوضع المتقدم",
     "mode_toggle": "الوضع:",
-
     # Theme switching
     "theme_light": "فاتح",
     "theme_dark": "داكن",
@@ -895,15 +831,12 @@ AR = {
     "theme_label": "الثيم:",
     "theme_help": "التحول بين الوضع الفاتح، الداكن، أو الوضع المتكامل مع النظام.",
     "theme_picker_help": "اختر الثيم من التوفّر.",
-
     # Status bar
     "status_ready": "جاهز",
     "status_exporting": "جارٍ التصدير…",
     "status_cancelled": "تم الإلغاء",
-
     # Window state
     "window_geometry": "هندسة النافذة",
-
     # Preferences dialog
     "preferences": "التفضيلات",
     "preferences_appearance": "المظهر",
@@ -913,7 +846,6 @@ AR = {
     "prefs_remember_window": "تذكر حجم ونقطة النافذة",
     "prefs_confirm_exit": "تأكيد عند الخروج",
     "prefs_tooltip_delay": "وقت التلميح (مللي ثانية):",
-
     # Shortcuts
     "shortcut_export": "تصدير",
     "shortcut_save": "حفظ الإعدادات",
@@ -929,7 +861,6 @@ AR = {
     "shortcut_cancel_help": "إلغاء عملية التصدير الجارية",
     "shortcut_find_help": "البحث في سجل العرض",
     "shortcut_preferences_help": "فتح نافذة التفضيلات",
-
     # === U5: Settings UX ===
     # Preferences search
     "preferences_search": "بحث في الإعدادات:",
@@ -941,27 +872,22 @@ AR = {
     "preferences_reset_done": "تمت إعادة تعيين جميع الإعدادات إلى الافتراضيات.",
     "preferences_applied": "تم حفظ التفضيلات",
     "preferences_applied_msg": "تم تطبيق تغييراتك وحفظها.",
-
     # Theme
     "theme_light": "فاتح",
     "theme_dark": "داكن",
     "theme_system": "نظام",
     "theme_label": "الثيم:",
-
     # Section header for Preferences dialogs
     "preferences_theme": "إعدادات المظهر",
-
     # UI Scale
     "ui_scale": "مقياس الواجهة:",
     "ui_scale_help": "اضبط تعديل الواجهة لتكبير الشاشات عالية الدقة. 1.0 = 100%.",
     "preferences_ui_scale": "مقياس الواجهة",
-
     # Accent color
     "accent_color": "لون التمييز",
     "accent_color_help": "خصص لون التمييز للأزرار والروابط والمؤشرات.",
     "color_picker_title": "اختر لون التمييز",
     "preferences_accent": "لون التمييز",
-
     # Window management
     "preferences_window_section": "إدارة النافذة",
     "prefs_remember_window": "تذكر حجم ونقطة النافذة",
@@ -969,15 +895,12 @@ AR = {
     "window_management_help": "التحكم في كيفية تعامل التطبيق مع حالة النافذة.",
     "prefs_tooltip_delay": "وقت التلميح (مللي ثانية):",
     "tooltip_delay_help": "الوقت قبل ظهور التلميح (مللي ثانية).",
-
     # Auto-save section
     "preferences_auto_save_section": "حفظ تلقائي للإعدادات",
     "prefs_auto_save": "حفظ الإعدادات تلقائياً عند التغيير",
     "prefs_auto_save_help": "حفظ الإعدادات تلقائياً عند حدوث التغيير.",
-
     # Shortcuts section
     "preferences_main_shortcuts": "اختصارات لوحة المفاتيح",
-
     # Font picker enhancements
     "font_favorites": "المفضلة",
     "font_recent": "الاستخدام الأخير",
@@ -986,17 +909,14 @@ AR = {
     "font_size_label": "حجم الخط",
     "add_to_favorites": "إضافة إلى المفضلة",
     "remove_from_favorites": "إزالة من المفضلة",
-
     # Color picker enhancements
     "color_favorites": "ألوان مفضلة",
     "color_contrast_warning": "تحذير من التباين",
     "color_contrast_insufficient": "تقارب منخفض - قد يكون النص صعب القراءة",
     "color_contrast_acceptable": "التقارب جيد",
-
     # Reset per section
     "reset_section": "إعادة الضبط",
     "section_modified": "● تم التعديل",
-
     # === U6: Onboarding & Help ===
     # First-run wizard
     "first_run_wizard_title": "مرحباً بك في PageOut",
@@ -1021,7 +941,6 @@ AR = {
     "onboarding_back": "رجوع",
     "onboarding_finish": "إنهاء الإعداد",
     "onboarding_cancel": "إلغاء",
-
     # Help menu items
     "check_my_setup": "افحص إعداداتي",
     "check_setup_title": "فحص النظام",
@@ -1030,7 +949,6 @@ AR = {
     "check_setup_done": "اكتمال الفحص!",
     "check_setup_copy": "نسخ النتائج",
     "check_setup_copy_desc": "نسخ البيانات إلى الحافظة (مخفاة)",
-
     # About dialog
     "about_title": "حول PageOut for Notion",
     "about_version": "الإصدار",
@@ -1040,13 +958,11 @@ AR = {
     "about_license": "رخصة MIT",
     "about_check_updates": "التحقق من التحديثات",
     "about_copyright": "© 2024 Rayan Esseghir",
-
     # Diagnostics results
     "diag_status_ok": "موافق",
     "diag_status_warning": "تحذير",
     "diag_status_error": "خطأ",
     "diag_status_info": "معلومات",
-
     # Diagnostic check names
     "diag_python": "إصدار Python",
     "diag_os": "نظام التشغيل",
@@ -1057,12 +973,10 @@ AR = {
     "diag_fonts": "الخطوط",
     "diag_keyring": "OS Keyring",
     "diag_version": "إصدار التطبيق",
-
     # Additional U6 keys
     "first_run_complete_msg": "تم إعداد التطبيق! يمكنك الآن البدء في تصدير صفحات Notion.",
     "check_setup_copy_no_data": "لا توجد بيانات فحص.",
     "check_setup_copy_success": "تم نسخ البيانات إلى الحافظة.",
-
     # === Phase 12: Scheduling ===
     "menu_schedule": "الجدولة",
     "schedule_menu_add": "إضافة جدولة",
@@ -1100,11 +1014,9 @@ AR = {
     "schedule_action_edit": "تعديل",
     "schedule_column_id": "المعرّف",
     "no_schedules": "لا توجد جداول بعد.",
-
     # Source tab - additional labels
     "what_to_export": "ما هو التصدير",
     "save_location": "حيث يحفظ",
-
     # Formats tab - additional labels
     "engine": "محرك PDF",
     "formats": "تنسيقات التصدير",

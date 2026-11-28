@@ -11,17 +11,16 @@ Tests cover:
 
 import os
 import sys
-import tempfile
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import pytest
 
 # Add the project root to the path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from pageout.core.config import SYNC_TARGETS, DEFAULTS
-from pageout.core.pipeline import export, Result
+from pageout.core.config import DEFAULTS, SYNC_TARGETS
+from pageout.core.pipeline import Result, export
 
 
 @pytest.fixture
@@ -30,6 +29,7 @@ def isolated(tmp_path, monkeypatch):
     monkeypatch.setattr("pageout.core.config.CONFIG_FILE", str(tmp_path / "cfg" / "config.json"))
     monkeypatch.delattr("pageout.core.config", "SOURCE_DIR", raising=False)
     import pageout.core.sources as sources
+
     monkeypatch.setattr(sources, "SOURCE_DIR", str(tmp_path / "cfg" / "sources"))
     monkeypatch.delenv("NOTION_TOKEN", raising=False)
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
@@ -78,11 +78,8 @@ def test_sync_module_imports():
     """Sync module should be importable with optional dependencies handled."""
     from pageout.core.sync import (
         SYNC_TARGETS as MODULE_SYNC_TARGETS,
-        sync_to_local_folder,
-        sync_to_git,
-        SyncResult,
-        SyncReport,
     )
+
     assert MODULE_SYNC_TARGETS == SYNC_TARGETS
 
 
@@ -92,11 +89,7 @@ def test_sync_result_dataclass():
     from pageout.core.sync import SyncResult
 
     result = SyncResult(
-        success=True,
-        target="Local folder",
-        message="Synced to /path/to/target",
-        files_synced=5,
-        error=""
+        success=True, target="Local folder", message="Synced to /path/to/target", files_synced=5, error=""
     )
 
     assert result.success is True
@@ -115,7 +108,7 @@ def test_sync_result_failure():
         target="Google Drive",
         message="Sync failed: permission denied",
         files_synced=0,
-        error="PermissionError: access denied"
+        error="PermissionError: access denied",
     )
 
     assert result.success is False
@@ -130,11 +123,7 @@ def test_sync_report_dataclass():
     from pageout.core.sync import SyncReport
 
     report = SyncReport(
-        target="Dropbox",
-        success=True,
-        message="Synced 10 files to Dropbox",
-        files_synced=10,
-        errors=[]
+        target="Dropbox", success=True, message="Synced 10 files to Dropbox", files_synced=10, errors=[]
     )
 
     report_dict = report.to_dict()
@@ -147,8 +136,8 @@ def test_sync_report_dataclass():
 # ---------------------------------------------------------------------- Test local folder sync
 def test_sync_to_local_folder_success(tmp_path, isolated):
     """Local folder sync should copy files to target directory."""
-    from pageout.core.sync import sync_to_local_folder
     from pageout.core.config import DEFAULTS
+    from pageout.core.sync import sync_to_local_folder
 
     # Create source directory with files
     source = tmp_path / "source"
@@ -169,14 +158,10 @@ def test_sync_to_local_folder_success(tmp_path, isolated):
 
 def test_sync_to_local_folder_missing_source(tmp_path, isolated):
     """Local folder sync should fail gracefully when source doesn't exist."""
-    from pageout.core.sync import sync_to_local_folder
     from pageout.core.config import DEFAULTS
+    from pageout.core.sync import sync_to_local_folder
 
-    result = sync_to_local_folder(
-        "/nonexistent/source/path",
-        "/tmp/target",
-        DEFAULTS
-    )
+    result = sync_to_local_folder("/nonexistent/source/path", "/tmp/target", DEFAULTS)
 
     assert result.success is False
     assert result.target == "Local folder"
@@ -184,8 +169,8 @@ def test_sync_to_local_folder_missing_source(tmp_path, isolated):
 
 def test_sync_to_local_folder_empty_path(tmp_path, isolated):
     """Local folder sync should fail with empty target path."""
-    from pageout.core.sync import sync_to_local_folder
     from pageout.core.config import DEFAULTS
+    from pageout.core.sync import sync_to_local_folder
 
     source = tmp_path / "source"
     source.mkdir()
@@ -199,8 +184,8 @@ def test_sync_to_local_folder_empty_path(tmp_path, isolated):
 # ---------------------------------------------------------------------- Test Git sync
 def test_sync_to_git_disabled(tmp_path, isolated):
     """Git sync should handle non-git directories gracefully."""
-    from pageout.core.sync import sync_to_git
     from pageout.core.config import DEFAULTS
+    from pageout.core.sync import sync_to_git
 
     # Create non-git directory
     source = tmp_path / "non_git"
@@ -216,8 +201,8 @@ def test_sync_to_git_disabled(tmp_path, isolated):
 
 def test_sync_to_git_no_git_installed(tmp_path, isolated):
     """Git sync should handle missing git command."""
-    from pageout.core.sync import sync_to_git
     from pageout.core.config import DEFAULTS
+    from pageout.core.sync import sync_to_git
 
     source = tmp_path / "source"
     source.mkdir()
@@ -234,7 +219,6 @@ def test_sync_to_git_no_git_installed(tmp_path, isolated):
 # ---------------------------------------------------------------------- Test Result dataclass with sync fields
 def test_result_has_sync_fields():
     """Result dataclass should include sync-related fields."""
-    from pageout.core.pipeline import Result
     from pageout.core.timing import TimingReport
 
     result = Result(
@@ -264,7 +248,6 @@ def test_result_has_sync_fields():
 # ---------------------------------------------------------------------- Test Result with sync data
 def test_result_with_sync_data():
     """Result should capture sync information correctly."""
-    from pageout.core.pipeline import Result
     from pageout.core.timing import TimingReport
 
     result = Result(
@@ -290,8 +273,8 @@ def test_result_with_sync_data():
 # ---------------------------------------------------------------------- Test perform_sync dispatcher
 def test_perform_sync_disabled():
     """perform_sync should return success for disabled sync."""
-    from pageout.core.sync import perform_sync, SyncReport
     from pageout.core.config import DEFAULTS
+    from pageout.core.sync import perform_sync
 
     report = perform_sync("/tmp/some_dir", "None", {}, DEFAULTS)
 
@@ -301,8 +284,8 @@ def test_perform_sync_disabled():
 
 def test_perform_sync_unknown_target():
     """perform_sync should handle unknown targets gracefully."""
-    from pageout.core.sync import perform_sync
     from pageout.core.config import DEFAULTS
+    from pageout.core.sync import perform_sync
 
     report = perform_sync("/tmp/some_dir", "Unknown Target", {}, DEFAULTS)
 
@@ -337,8 +320,8 @@ def test_export_without_sync(tmp_path, isolated):
 # ---------------------------------------------------------------------- Test optional dependency handling
 def test_google_drive_requires_optional_dependency(tmp_path, isolated, monkeypatch):
     """Google Drive sync should fail gracefully when dependencies missing."""
-    from pageout.core.sync import sync_to_gdrive, SyncResult
     from pageout.core.config import DEFAULTS
+    from pageout.core.sync import sync_to_gdrive
 
     # Create a minimal test that doesn't rely on keyring being installed
     # The sync_to_gdrive function checks for google-auth imports inside
@@ -348,6 +331,7 @@ def test_google_drive_requires_optional_dependency(tmp_path, isolated, monkeypat
 
     # Mock the google imports to fail
     import builtins
+
     original_import = builtins.__import__
 
     def mock_import(name, *args, **kwargs):
@@ -355,7 +339,7 @@ def test_google_drive_requires_optional_dependency(tmp_path, isolated, monkeypat
             raise ImportError("google-auth not installed")
         return original_import(name, *args, **kwargs)
 
-    with patch('builtins.__import__', side_effect=mock_import):
+    with patch("builtins.__import__", side_effect=mock_import):
         result = sync_to_gdrive(str(source_dir), "test_folder_id", DEFAULTS)
 
     # Should return a SyncResult indicating missing dependencies
@@ -366,11 +350,12 @@ def test_google_drive_requires_optional_dependency(tmp_path, isolated, monkeypat
 # ---------------------------------------------------------------------- Test credential handling
 def test_dropbox_uses_keyring_fallback(monkeypatch):
     """Dropbox sync should use keyring or environment variable for credentials."""
-    from pageout.core.sync import _get_secret, _get_env_secret
+    from pageout.core.sync import _get_env_secret, _get_secret
 
     # Test that keyring module may not be available
     try:
         import keyring
+
         # Mock keyring.get_password
         monkeypatch.setattr(keyring, "get_password", lambda service, key: None)
         # Test _get_secret returns empty when keyring returns None
@@ -390,6 +375,7 @@ def test_gdrive_uses_env_var_for_token(monkeypatch):
     """Google Drive sync should look for GDRIVE_TOKEN in environment."""
     with patch.dict(os.environ, {"GDRIVE_TOKEN": "test-gdrive-token"}, clear=False):
         from pageout.core.sync import _get_env_secret
+
         token = _get_env_secret("GDRIVE_TOKEN")
         assert token == "test-gdrive-token"
 
@@ -397,11 +383,13 @@ def test_gdrive_uses_env_var_for_token(monkeypatch):
 # ---------------------------------------------------------------------- Test S3 credential handling
 def test_s3_uses_aws_env_vars(monkeypatch):
     """S3 sync should use AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY from environment."""
-    with patch.dict(os.environ, {
-        "AWS_ACCESS_KEY_ID": "AKIAIOSFODNN7EXAMPLE",
-        "AWS_SECRET_ACCESS_KEY": "test-secret-key"
-    }, clear=False):
+    with patch.dict(
+        os.environ,
+        {"AWS_ACCESS_KEY_ID": "AKIAIOSFODNN7EXAMPLE", "AWS_SECRET_ACCESS_KEY": "test-secret-key"},
+        clear=False,
+    ):
         from pageout.core.sync import _get_env_secret
+
         key = _get_env_secret("AWS_ACCESS_KEY_ID")
         secret = _get_env_secret("AWS_SECRET_ACCESS_KEY")
         assert key == "AKIAIOSFODNN7EXAMPLE"
@@ -420,10 +408,9 @@ def test_count_files_empty_directory(tmp_path, isolated):
 # ---------------------------------------------------------------------- Test integration with scheduler
 def test_sync_fields_in_scheduler_task(tmp_path, isolated):
     """Scheduler tasks should be able to include sync configuration."""
-    from pageout.core.scheduler import ScheduledTask, ScheduleStatus
-    from pageout.core.config import DEFAULTS
-    import json
     import uuid
+
+    from pageout.core.scheduler import ScheduledTask, ScheduleStatus
 
     # Create a task with sync config - ScheduledTask requires an id field
     task = ScheduledTask(

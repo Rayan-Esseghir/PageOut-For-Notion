@@ -2,7 +2,7 @@
 
 import json
 import os
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 from pageout.core.config import CONFIG_DIR, DEFAULTS
 

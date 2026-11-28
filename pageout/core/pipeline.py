@@ -24,15 +24,6 @@ import time
 from dataclasses import dataclass, field
 
 from pageout.core.assets import detect_ext, download
-from pageout.core.timing import (
-    TimingReport,
-    get_timer,
-    record_api_wait,
-    record_image_bytes,
-    reset_timer,
-    set_api_timing,
-    timer,
-)
 from pageout.core.cache import ExportCache
 from pageout.core.config import (
     DB_EXPORT_MODES,
@@ -50,18 +41,25 @@ from pageout.core.config import (
 from pageout.core.database import index_html_body, index_markdown, write_csv
 from pageout.core.errors import Cancelled, LoginRequired
 from pageout.core.ir import Asset, plain_text
+from pageout.core.timing import (
+    TimingReport,
+    get_timer,
+    record_image_bytes,
+    reset_timer,
+    set_api_timing,
+)
 
 # Import sync module for Phase 16
 try:
     from pageout.core.sync import (
         SYNC_TARGETS,
-        sync_to_local_folder,
-        sync_to_git,
-        sync_to_gdrive,
-        sync_to_dropbox,
-        sync_to_s3,
-        perform_sync,
         SyncReport,
+        perform_sync,
+        sync_to_dropbox,
+        sync_to_gdrive,
+        sync_to_git,
+        sync_to_local_folder,
+        sync_to_s3,
     )
 except ImportError:
     SYNC_TARGETS = ["None"]
@@ -72,15 +70,15 @@ from pageout.core.naming import build_name, clean_filename, format_date
 from pageout.core.resolver import Resolver
 from pageout.core.secrets import redact
 from pageout.plugins.hooks import Hooks
+from pageout.renderers.asciidoc import build_asciidoc
 from pageout.renderers.base import R
-from pageout.renderers.asciidoc import build_asciidoc, blocks_asciidoc
 from pageout.renderers.docx import build_docx
 from pageout.renderers.epub import build_epub
 from pageout.renderers.html import _page_icon_html, blocks_html, esc, props_html, wrap_html
 from pageout.renderers.latex import blocks_tex, build_complete_latex, escape_tex
 from pageout.renderers.markdown import blocks_md, md_front_matter
 from pageout.renderers.pdf import launch_context, pdf_kwargs, remove_blank_pages, render_notion_page
-from pageout.renderers.rst import build_rst, blocks_rst
+from pageout.renderers.rst import build_rst
 from pageout.renderers.txt import blocks_txt
 from pageout.sources.notion_api import (
     api,
@@ -90,10 +88,9 @@ from pageout.sources.notion_api import (
     page_title,
     passes_filter,
     query_all,
-    retrieve_markdown_with_fallback,
     resolve_roots,
+    retrieve_markdown_with_fallback,
     set_api_concurrency,
-    set_api_timing as notion_set_api_timing,
     sort_pages,
     strip_private,
     walk,
@@ -423,6 +420,7 @@ class Exporter:
         want_opt = embed_pdf or c["fmt_docx"]
 
         img_count = 0
+
         def fetch(img):
             nonlocal img_count
             try:
@@ -515,9 +513,7 @@ class Exporter:
 
         # Try fast markdown path via API (P4: Cheaper Markdown)
         if c.get("fast_markdown", True) and self.notion and it.tree and not it.fast_md:
-            md, used_fast = retrieve_markdown_with_fallback(
-                self.notion, it.id, it.tree, include_transcript=False
-            )
+            md, used_fast = retrieve_markdown_with_fallback(self.notion, it.id, it.tree, include_transcript=False)
             if used_fast and md:
                 it.fast_md = md
             elif md is None and not used_fast:
@@ -652,7 +648,9 @@ class Exporter:
             with open(idx, "w", encoding="utf-8") as fh:
                 if f == "html":
                     fh.write(
-                        wrap_html(name, index_html_body(name, items, link, idx, date_fmt, with_table, self.props_of, c), c)
+                        wrap_html(
+                            name, index_html_body(name, items, link, idx, date_fmt, with_table, self.props_of, c), c
+                        )
                     )
                 else:
                     fh.write(index_markdown(name, items, link, idx, date_fmt, with_table, self.props_of, c))
@@ -685,7 +683,7 @@ class Exporter:
 
         # Write each group to its own file
         total_written = 0
-        from pageout.core.database import index_markdown, index_html_body
+        from pageout.core.database import index_html_body, index_markdown
         from pageout.renderers.html import wrap_html
 
         for group_key, group_items in groups.items():
@@ -699,14 +697,34 @@ class Exporter:
                 with open(group_idx, "w", encoding="utf-8") as fh:
                     if fmt == "html":
                         fh.write(
-                            wrap_html(f"{base_name} - {group_key}", index_html_body(
-                                f"{base_name} - {group_key}", group_items, link, group_idx,
-                                date_fmt, False, self.props_of, c
-                            ), c)
+                            wrap_html(
+                                f"{base_name} - {group_key}",
+                                index_html_body(
+                                    f"{base_name} - {group_key}",
+                                    group_items,
+                                    link,
+                                    group_idx,
+                                    date_fmt,
+                                    False,
+                                    self.props_of,
+                                    c,
+                                ),
+                                c,
+                            )
                         )
                     elif fmt == "md":
-                        fh.write(index_markdown(f"{base_name} - {group_key}", group_items, link, group_idx,
-                                            date_fmt, False, self.props_of, c))
+                        fh.write(
+                            index_markdown(
+                                f"{base_name} - {group_key}",
+                                group_items,
+                                link,
+                                group_idx,
+                                date_fmt,
+                                False,
+                                self.props_of,
+                                c,
+                            )
+                        )
                     elif fmt == "json":
                         for it in group_items:
                             try:
@@ -715,7 +733,7 @@ class Exporter:
                                     "id": it.id,
                                     "title": it.title,
                                     "properties": data.get("properties", {}),
-                                    "blocks": strip_private(data.get("blocks", [])) if data else []
+                                    "blocks": strip_private(data.get("blocks", [])) if data else [],
                                 }
                                 item_path = self.path_for("json", it)
                                 os.makedirs(os.path.dirname(item_path), exist_ok=True)
@@ -956,11 +974,15 @@ class Exporter:
                                     c,
                                 )
                             elif fmt == "rst":
-                                rst_content = build_rst(it.title, self.prop_rows(it), self.document(it).blocks, R(c, "rst"), c)
+                                rst_content = build_rst(
+                                    it.title, self.prop_rows(it), self.document(it).blocks, R(c, "rst"), c
+                                )
                                 with open(path, "w", encoding="utf-8") as f:
                                     f.write(rst_content)
                             elif fmt == "adoc":
-                                adoc_content = build_asciidoc(it.title, self.prop_rows(it), self.document(it).blocks, R(c, "adoc"), c)
+                                adoc_content = build_asciidoc(
+                                    it.title, self.prop_rows(it), self.document(it).blocks, R(c, "adoc"), c
+                                )
                                 with open(path, "w", encoding="utf-8") as f:
                                     f.write(adoc_content)
                         except LoginRequired:
@@ -1145,7 +1167,11 @@ def export(
                 log(f"Sync failed: {sync_report.message}")
 
     result = Result(
-        out, total, failed, ex.skipped, ex.last_tex,
+        out,
+        total,
+        failed,
+        ex.skipped,
+        ex.last_tex,
         timing=timing,
         profile_timing=profile,
         sync_target=sync_report.target if sync_report else "None",

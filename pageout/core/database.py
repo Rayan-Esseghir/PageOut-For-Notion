@@ -3,7 +3,6 @@
 import csv
 import html as _html
 import os
-from typing import Optional, Dict, Any
 
 from pageout.core.naming import format_date
 
@@ -47,7 +46,7 @@ def index_markdown(title, items, link_path, index_path, date_fmt, with_table, pr
     # Check if we should use templates
     if cfg and cfg.get("use_template", True):
         try:
-            from pageout.core.templates import TemplateError, template_exists, load_template
+            from pageout.core.templates import TemplateError, load_template, template_exists
 
             template_name = cfg.get("index_template", "index")
             if template_exists(template_name, "md"):
@@ -68,8 +67,7 @@ def index_markdown(title, items, link_path, index_path, date_fmt, with_table, pr
                     content = "\n".join(lines)
                 else:
                     content = "\n".join(
-                        f"{'  ' * it.depth}- [{it.title}]({_rel(link_path(it), index_path)})"
-                        for it in items
+                        f"{'  ' * it.depth}- [{it.title}]({_rel(link_path(it), index_path)})" for it in items
                     )
 
                 context = {
@@ -107,7 +105,7 @@ def index_html_body(title, items, link_path, index_path, date_fmt, with_table, p
     # Check if we should use templates
     if cfg and cfg.get("use_template", True):
         try:
-            from pageout.core.templates import TemplateError, template_exists, load_template
+            from pageout.core.templates import TemplateError, load_template, template_exists
 
             template_name = cfg.get("index_template", "index")
             if template_exists(template_name, "html"):
@@ -179,7 +177,7 @@ def index_markdown_template(title, content, cfg=None):
     """
     if cfg and cfg.get("use_template", True):
         try:
-            from pageout.core.templates import TemplateError, template_exists, load_template
+            from pageout.core.templates import TemplateError, load_template, template_exists
 
             template_name = cfg.get("index_template", "index")
             if template_exists(template_name, "md"):

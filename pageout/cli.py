@@ -22,22 +22,33 @@ from pageout.core.config import (
     LINK_MODES,
     MD_PRESETS,
     SUB_MODES,
-    SYNC_TARGETS,
     load_config,
-)
-from pageout.core.profiles import list_profiles, save_profile, load_profile, delete_profile, profile_exists, merge_profile_into_config
-from pageout.core.sources import list_sources, get_source, add_source, delete_source, toggle_pin, extract_id_from_url, source_exists
-from pageout.core.scheduler import (
-    add_schedule,
-    remove_schedule,
-    list_schedules,
-    get_schedule,
-    schedule_exists,
-    enable_schedule,
-    disable_schedule,
 )
 from pageout.core.errors import Cancelled
 from pageout.core.pipeline import export
+from pageout.core.profiles import (
+    delete_profile,
+    list_profiles,
+    load_profile,
+    merge_profile_into_config,
+    profile_exists,
+    save_profile,
+)
+from pageout.core.scheduler import (
+    add_schedule,
+    disable_schedule,
+    enable_schedule,
+    list_schedules,
+    remove_schedule,
+)
+from pageout.core.sources import (
+    add_source,
+    delete_source,
+    get_source,
+    list_sources,
+    source_exists,
+    toggle_pin,
+)
 
 FORMAT_ALIASES = {"markdown": "md", "text": "txt", "word": "docx", "latex": "tex"}
 ALL_FORMATS = FORMATS + ["images"]
@@ -178,8 +189,11 @@ def build_parser():
     e.add_argument("--source", help="load named source (recent database/page)")
     e.add_argument("--list-sources", action="store_true", help="list saved sources and exit")
     # Phase 16: Sync support
-    e.add_argument("--sync-target", choices=["None", "Local folder", "Google Drive", "Dropbox", "S3", "Git repo"],
-                   help="sync target for post-export")
+    e.add_argument(
+        "--sync-target",
+        choices=["None", "Local folder", "Google Drive", "Dropbox", "S3", "Git repo"],
+        help="sync target for post-export",
+    )
     e.add_argument("--sync-path", help="local/network folder path for sync")
     e.add_argument("--sync-branch", default="main", help="git branch for Git sync")
     e.add_argument("--sync-after", action="store_true", help="sync after export completes")
@@ -206,7 +220,9 @@ def build_parser():
     ss_add = ss_sub.add_parser("add", help="add a new source")
     ss_add.add_argument("name", help="source name")
     ss_add.add_argument("url", help="Notion database/page URL or ID")
-    ss_add.add_argument("--type", choices=["Auto-detect", "Database", "Page"], default="Auto-detect", help="source type")
+    ss_add.add_argument(
+        "--type", choices=["Auto-detect", "Database", "Page"], default="Auto-detect", help="source type"
+    )
     ss_add.add_argument("--pin", action="store_true", help="pin this source")
     ss_delete = ss_sub.add_parser("delete", help="delete a source")
     ss_delete.add_argument("name", help="source name")
@@ -242,7 +258,9 @@ def build_parser():
     ss_add.add_argument("--filter-prop", help="property to filter by")
     ss_add.add_argument("--filter-op", choices=["contains", "does not contain", "equals"], default="contains")
     ss_add.add_argument("--filter-value", help="filter value")
-    ss_add.add_argument("--sort-by", choices=["Date", "Title", "Created", "Last edited", "Database order"], default="Date")
+    ss_add.add_argument(
+        "--sort-by", choices=["Date", "Title", "Created", "Last edited", "Database order"], default="Date"
+    )
     ss_add.add_argument("--sort-desc", action="store_true", help="sort descending")
     ss_add.add_argument("--group-by", help="property to group by")
     ss_remove = ss_sub.add_parser("remove", help="remove a scheduled task")
@@ -274,7 +292,9 @@ def make_config(args, warn):
     # Profile support - load profile FIRST so CLI args can override it
     if args.profile:
         if not profile_exists(args.profile):
-            raise UsageError(f"Profile '{args.profile}' not found. Use 'pageout profile list' to see available profiles.")
+            raise UsageError(
+                f"Profile '{args.profile}' not found. Use 'pageout profile list' to see available profiles."
+            )
         profile_data = load_profile(args.profile)
         merge_profile_into_config(profile_data, cfg)
 
@@ -455,7 +475,7 @@ def main(argv=None, notion=None, stdout=None, stderr=None):
 
     # Queue subcommands
     if args.cmd == "queue":
-        from pageout.core.queue import ExportQueue, JobPriority, JobStatus
+        from pageout.core.queue import ExportQueue, JobPriority
 
         q = ExportQueue()
         if args.queue_cmd == "list":
@@ -524,6 +544,7 @@ def main(argv=None, notion=None, stdout=None, stderr=None):
         if args.schedule_cmd == "list":
             schedules = list_schedules()
             from pageout.core.scheduler import get_platform
+
             platform_name = get_platform()
             if schedules:
                 for s in schedules:

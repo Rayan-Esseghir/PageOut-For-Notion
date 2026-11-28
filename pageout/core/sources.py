@@ -7,7 +7,7 @@ This module provides functions to save, load, and manage Notion sources
 import json
 import os
 import re
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional
 
 from pageout.core.config import CONFIG_DIR, SOURCE_TYPES
 
@@ -308,9 +308,18 @@ def update_source(name: str, **kwargs) -> bool:
         return False
 
     valid_fields = {
-        "url", "source_type", "pinned", "workspace",
-        "filter_prop", "filter_op", "filter_value",
-        "sort_by", "sort_desc", "max_pages", "group_by", "sources"
+        "url",
+        "source_type",
+        "pinned",
+        "workspace",
+        "filter_prop",
+        "filter_op",
+        "filter_value",
+        "sort_by",
+        "sort_desc",
+        "max_pages",
+        "group_by",
+        "sources",
     }
 
     for key, value in kwargs.items():
@@ -455,10 +464,7 @@ def get_sources_with_filter() -> List[Dict]:
         List of sources with non-empty filter settings
     """
     sources = list_sources()
-    return [
-        s for s in sources
-        if s.get("filter_prop") or s.get("filter_value") or s.get("sort_by") != "Date"
-    ]
+    return [s for s in sources if s.get("filter_prop") or s.get("filter_value") or s.get("sort_by") != "Date"]
 
 
 __all__ = [

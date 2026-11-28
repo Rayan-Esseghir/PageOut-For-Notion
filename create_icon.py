@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Generate PageOut custom icon (ICO and PNG) using Pillow."""
 
-from PIL import Image, ImageDraw
 import os
+
+from PIL import Image, ImageDraw
+
 
 def create_pageout_icon():
     """Create a modern PageOut icon: document page with export arrow."""
@@ -21,11 +23,7 @@ def create_pageout_icon():
 
         # Document background (rounded rectangle)
         doc_color = (40, 167, 69, 255)  # Modern green #28a745
-        draw.rounded_rectangle(
-            [margin, margin, size - margin, size - margin],
-            radius=corner_radius,
-            fill=doc_color
-        )
+        draw.rounded_rectangle([margin, margin, size - margin, size - margin], radius=corner_radius, fill=doc_color)
 
         # White document content area
         content_margin = max(2, size // 12)
@@ -57,9 +55,7 @@ def create_pageout_icon():
             line_left = content_left + (doc_width - line_width) / 2
             line_right = line_left + line_width
             draw.rounded_rectangle(
-                [line_left, y, line_right, y + line_height],
-                radius=max(1, line_height // 2),
-                fill=line_color
+                [line_left, y, line_right, y + line_height], radius=max(1, line_height // 2), fill=line_color
             )
 
         # Export arrow (right side)
@@ -90,7 +86,7 @@ def create_pageout_icon():
         accent_size = max(2, size // 16)
         draw.ellipse(
             [margin + 2, margin + 2, margin + 2 + accent_size * 2, margin + 2 + accent_size * 2],
-            fill=(255, 255, 255, 180)
+            fill=(255, 255, 255, 180),
         )
 
         images.append(img)
@@ -99,10 +95,7 @@ def create_pageout_icon():
     ico_path = "pageout/assets/pageout.ico"
     os.makedirs(os.path.dirname(ico_path), exist_ok=True)
     images[-1].save(
-        ico_path,
-        format="ICO",
-        sizes=[(img.width, img.height) for img in images],
-        append_images=images[:-1]
+        ico_path, format="ICO", sizes=[(img.width, img.height) for img in images], append_images=images[:-1]
     )
     print(f"Created {ico_path} with sizes: {[img.size for img in images]}")
 
@@ -117,10 +110,11 @@ def create_pageout_icon():
         "pageout/assets/icon.ico",
         format="ICO",
         sizes=[(img.width, img.height) for img in images],
-        append_images=images[:-1]
+        append_images=images[:-1],
     )
     images[-1].save("pageout/assets/icon.png", format="PNG")
-    print(f"Created backward-compatible icon.ico and icon.png")
+    print("Created backward-compatible icon.ico and icon.png")
+
 
 if __name__ == "__main__":
     create_pageout_icon()

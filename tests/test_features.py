@@ -446,7 +446,6 @@ def test_zip_source_parses_ids_and_links(tmp_path):
 
 def _make_zip_with_csv(path):
     """Create a test zip with a CSV database export."""
-    import io
 
     with zipfile.ZipFile(path, "w") as z:
         # Markdown page with ID
@@ -556,8 +555,8 @@ def test_cli_bad_zip_is_a_clean_error(tmp_path, isolated, capsys):
 
 # ------------------------------------------------------------------ Phase 8: Profiles
 def test_profile_save_and_load(tmp_path, isolated):
-    from pageout.core.profiles import save_profile, load_profile, list_profiles, delete_profile, profile_exists
     from pageout.core.config import DEFAULTS
+    from pageout.core.profiles import delete_profile, list_profiles, load_profile, save_profile
 
     # Save a profile
     cfg = dict(DEFAULTS, fmt_pdf=True, fmt_md=True, name_format="{title}", save_dir=str(tmp_path))
@@ -584,10 +583,15 @@ def test_profile_save_and_load(tmp_path, isolated):
 def test_profile_cli_commands(tmp_path, isolated, capsys):
     # Save profile via CLI (uses current config, which we set via env)
     import os
+
     os.environ["NOTION_TOKEN"] = "tok"
-    code = cli_main([
-        "profile", "save", "cli-profile",
-    ])
+    code = cli_main(
+        [
+            "profile",
+            "save",
+            "cli-profile",
+        ]
+    )
     assert code == 0
 
     # List profiles
@@ -616,20 +620,26 @@ def test_profile_cli_commands(tmp_path, isolated, capsys):
 
 def test_cli_export_with_profile(tmp_path, isolated):
     # First save a profile
-    from pageout.core.profiles import save_profile
     from pageout.core.config import DEFAULTS
+    from pageout.core.profiles import save_profile
+
     profile_cfg = dict(DEFAULTS, fmt_md=True, save_dir=str(tmp_path / "prof_out"), name_format="{title}")
     save_profile("export-profile", profile_cfg)
 
     # Export using profile
     out_dir = tmp_path / "prof_out"
-    code = cli_main([
-        "export",
-        DB_ID,
-        "--profile", "export-profile",
-        "--token", "tok",
-        "-q",
-    ], notion=FakeNotion())
+    code = cli_main(
+        [
+            "export",
+            DB_ID,
+            "--profile",
+            "export-profile",
+            "--token",
+            "tok",
+            "-q",
+        ],
+        notion=FakeNotion(),
+    )
     assert code == 0
     assert (out_dir / "Markdown").exists()
     files = list((out_dir / "Markdown").glob("*.md"))
@@ -640,21 +650,28 @@ def test_cli_export_with_profile(tmp_path, isolated):
 
 def test_profile_merge_with_overrides(tmp_path, isolated):
     # Save a profile with specific settings
-    from pageout.core.profiles import save_profile
     from pageout.core.config import DEFAULTS
+    from pageout.core.profiles import save_profile
+
     profile_cfg = dict(DEFAULTS, fmt_pdf=True, fmt_md=True, name_format="{title}", save_dir=str(tmp_path / "merge_out"))
     save_profile("merge-profile", profile_cfg)
 
     # Export with profile + CLI override (format should override)
     out_dir = tmp_path / "merge_out"
-    code = cli_main([
-        "export",
-        DB_ID,
-        "--profile", "merge-profile",
-        "--format", "pdf",  # Override: only pdf, not md
-        "--token", "tok",
-        "-q",
-    ], notion=FakeNotion())
+    code = cli_main(
+        [
+            "export",
+            DB_ID,
+            "--profile",
+            "merge-profile",
+            "--format",
+            "pdf",  # Override: only pdf, not md
+            "--token",
+            "tok",
+            "-q",
+        ],
+        notion=FakeNotion(),
+    )
     assert code == 0
     # Should have pdf, not markdown (CLI override wins)
     assert (out_dir / "PDF").exists()
@@ -663,8 +680,7 @@ def test_profile_merge_with_overrides(tmp_path, isolated):
 
 # ------------------------------------------------------------------ Phase 8b: Saved Sources
 def test_source_save_and_load(tmp_path, isolated):
-    from pageout.core.sources import add_source, get_source, list_sources, delete_source, source_exists
-    from pageout.core.config import DEFAULTS
+    from pageout.core.sources import add_source, delete_source, get_source, list_sources, source_exists
 
     # Add a source
     assert add_source("my-source", "https://www.notion.so/testdb-1234567890abcdef1234567890abcdef", "Database")
@@ -691,9 +707,14 @@ def test_source_save_and_load(tmp_path, isolated):
 
 def test_source_cli_commands(tmp_path, isolated, capsys):
     # Add a source via CLI
-    code = cli_main([
-        "source", "add", "cli-source", "https://www.notion.so/testsrc-1234567890abcdef1234567890abcdef",
-    ])
+    code = cli_main(
+        [
+            "source",
+            "add",
+            "cli-source",
+            "https://www.notion.so/testsrc-1234567890abcdef1234567890abcdef",
+        ]
+    )
     assert code == 0
 
     # List sources
@@ -763,18 +784,25 @@ def test_extract_id_from_url():
 def test_cli_export_with_saved_source(tmp_path, isolated):
     # Add a saved source
     from pageout.core.sources import add_source
+
     add_source("test-db", DB_ID, "Database")
 
     # Export using the saved source via --source
     out_dir = tmp_path / "source_out"
-    code = cli_main([
-        "export",
-        DB_ID,  # Still need to provide database (source just sets default)
-        "--source", "test-db",
-        "--format", "md",
-        "--token", "tok",
-        "-o", str(out_dir),
-    ], notion=FakeNotion()
+    code = cli_main(
+        [
+            "export",
+            DB_ID,  # Still need to provide database (source just sets default)
+            "--source",
+            "test-db",
+            "--format",
+            "md",
+            "--token",
+            "tok",
+            "-o",
+            str(out_dir),
+        ],
+        notion=FakeNotion(),
     )
     assert code == 0
     assert (out_dir / "Markdown").exists()

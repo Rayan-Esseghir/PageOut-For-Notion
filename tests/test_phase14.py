@@ -10,11 +10,10 @@ Tests cover:
 - Custom block renderer registration
 """
 
-import os
 import sys
 import tempfile
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import pytest
 
@@ -22,27 +21,21 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from pageout.core.templates import (
-    Template,
-    TemplateError,
-    load_template,
-    load_template_safely,
-    template_exists,
-    get_template_path,
     VAR_PATTERN,
-    TEMPLATES_DIR,
-    PLUGIN_TEMPLATES_DIR,
+    Template,
+    get_template_path,
+    template_exists,
 )
 from pageout.plugins.template import (
-    TemplateSandbox,
+    USER_PLUGINS_DIR,
+    USER_TEMPLATES_DIR,
     TemplateEngine,
     TemplateResult,
-    get_template_engine,
-    init_template_engine,
-    template_render_safe,
-    load_user_template,
+    TemplateSandbox,
     get_available_templates,
-    USER_TEMPLATES_DIR,
-    USER_PLUGINS_DIR,
+    init_template_engine,
+    load_user_template,
+    template_render_safe,
 )
 
 
@@ -165,10 +158,7 @@ class TestTemplateSandbox:
         sandbox = TemplateSandbox(template_type="html")
         # Context with __import__ which could be dangerous
         template = "{{ title }}"
-        result = sandbox.render(template, {
-            "title": "Hello",
-            "__import__": "dangerous"
-        }, sanitize=True)
+        result = sandbox.render(template, {"title": "Hello", "__import__": "dangerous"}, sanitize=True)
         # Should render with the valid title key
         assert "Hello" in result
 
@@ -252,7 +242,7 @@ def register(engine):
 
             engine = TemplateEngine()
             # Patch the plugins dir for testing
-            with patch('pageout.plugins.template.USER_PLUGINS_DIR', plugins_dir):
+            with patch("pageout.plugins.template.USER_PLUGINS_DIR", plugins_dir):
                 loaded = engine.load_plugins()
                 assert loaded is True
 
@@ -283,7 +273,7 @@ class TestTemplateFunctions:
             engine = init_template_engine()
             engine.html_sandbox.template_dir = user_tmpl_dir
 
-            with patch('pageout.plugins.template.USER_TEMPLATES_DIR', user_tmpl_dir):
+            with patch("pageout.plugins.template.USER_TEMPLATES_DIR", user_tmpl_dir):
                 result = load_user_template("custom", "html")
                 assert result is not None
                 assert result.success is True
@@ -393,13 +383,16 @@ class TestIntegration:
             assert raw_tmpl is not None
 
             # Render
-            result = sandbox.render(raw_tmpl, {
-                "title": "Test Page",
-                "body": "<p>Hello</p>",
-                "body_classes": "dark",
-                "css": "body { color: #333; }",
-                "head_extra": "",
-            })
+            result = sandbox.render(
+                raw_tmpl,
+                {
+                    "title": "Test Page",
+                    "body": "<p>Hello</p>",
+                    "body_classes": "dark",
+                    "css": "body { color: #333; }",
+                    "head_extra": "",
+                },
+            )
 
             # Body should be escaped
             assert "Test Page" in result
@@ -419,10 +412,13 @@ class TestIntegration:
             raw_tmpl = sandbox_md.load_template("page", ".md")
 
             # Content with pipe (table column separator)
-            result = sandbox_md.render(raw_tmpl, {
-                "title": "Test",
-                "content": "Cell 1 | Cell 2",
-            })
+            result = sandbox_md.render(
+                raw_tmpl,
+                {
+                    "title": "Test",
+                    "content": "Cell 1 | Cell 2",
+                },
+            )
 
             # Pipe should be escaped in markdown context
             assert "\\|" in result

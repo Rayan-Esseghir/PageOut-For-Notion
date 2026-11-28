@@ -5,11 +5,11 @@ import os
 import threading
 import time
 import uuid
-from dataclasses import dataclass, field, asdict
+from concurrent.futures import Future, ThreadPoolExecutor
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional, Callable
-from concurrent.futures import ThreadPoolExecutor, Future
+from typing import Any, Callable, Dict, List, Optional
 
 from pageout.core.config import CONFIG_DIR
 
@@ -32,6 +32,7 @@ class JobPriority(Enum):
 @dataclass
 class ExportJob:
     """A single export job in the queue."""
+
     id: str
     name: str
     config: Dict[str, Any]
@@ -120,7 +121,7 @@ class ExportQueue:
                 pending = [j for j in data["jobs"] if j["status"] in ("pending", "running", "paused")]
                 history = [j for j in data["jobs"] if j["status"] in ("completed", "failed", "cancelled")]
                 history.sort(key=lambda x: x.get("completed_at", ""), reverse=True)
-                data["jobs"] = pending + history[:self.MAX_HISTORY - len(pending)]
+                data["jobs"] = pending + history[: self.MAX_HISTORY - len(pending)]
             with open(self.QUEUE_FILE, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2)
         except Exception:
@@ -221,6 +222,7 @@ class ExportQueue:
         """Get all jobs sorted by priority and creation time."""
         with self._lock:
             jobs = list(self.jobs.values())
+
             # Sort: running first, then by priority (high first), then by creation time
             def sort_key(job):
                 status_order = {
@@ -389,7 +391,8 @@ class ExportQueue:
         """Clear completed/failed/cancelled jobs from history."""
         with self._lock:
             self.jobs = {
-                k: v for k, v in self.jobs.items()
+                k: v
+                for k, v in self.jobs.items()
                 if v.status in (JobStatus.PENDING, JobStatus.RUNNING, JobStatus.PAUSED)
             }
             self._save()

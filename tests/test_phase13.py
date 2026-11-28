@@ -1,6 +1,5 @@
 """Tests for Phase 13: Better PDF features."""
 
-import io
 import pytest
 
 from pageout.core.config import DEFAULTS
@@ -17,16 +16,16 @@ def cfg_base():
 def test_table_of_content_js_generates_links():
     """TOC JS should extract headings and create links."""
     # The TOC_JS constant should exist and be valid JavaScript
-    assert hasattr(pdf, 'TOC_JS')
-    assert 'querySelectorAll' in pdf.TOC_JS
-    assert 'h1,h2,h3,h4,h5,h6' in pdf.TOC_JS
-    assert 'notion-toc' in pdf.TOC_JS
+    assert hasattr(pdf, "TOC_JS")
+    assert "querySelectorAll" in pdf.TOC_JS
+    assert "h1,h2,h3,h4,h5,h6" in pdf.TOC_JS
+    assert "notion-toc" in pdf.TOC_JS
 
 
 def test_toc_js_returns_section_count():
     """TOC JS should return the number of sections found."""
     # Verify the JS returns items.length
-    assert 'return items.length' in pdf.TOC_JS
+    assert "return items.length" in pdf.TOC_JS
 
 
 # ---------------------------------------------------------------------- Test running_header
@@ -38,9 +37,9 @@ def test_running_header_templates_returns_correct_format(cfg_base):
     hdr, ftr = pdf._running_header_templates(cfg_base)
 
     # Header should have page-title class
-    assert 'page-title' in hdr
+    assert "page-title" in hdr
     # Footer should have page number
-    assert 'pageNumber' in ftr
+    assert "pageNumber" in ftr
 
 
 def test_running_header_with_custom_format(cfg_base):
@@ -51,7 +50,7 @@ def test_running_header_with_custom_format(cfg_base):
     hdr, ftr = pdf._running_header_templates(cfg_base)
 
     # Custom format should be in header
-    assert '{title}' in cfg_base["header_format"]
+    assert "{title}" in cfg_base["header_format"]
 
 
 def test_running_header_page_position(cfg_base):
@@ -61,7 +60,7 @@ def test_running_header_page_position(cfg_base):
 
     hdr, ftr = pdf._running_header_templates(cfg_base)
     assert hdr != "<span></span>"
-    assert 'pageNumber' in ftr
+    assert "pageNumber" in ftr
 
 
 def test_running_header_bottom_center(cfg_base):
@@ -70,23 +69,23 @@ def test_running_header_bottom_center(cfg_base):
     cfg_base["page_num_position"] = "Bottom Center"
 
     hdr, ftr = pdf._running_header_templates(cfg_base)
-    assert 'text-align:center' in ftr
+    assert "text-align:center" in ftr
 
 
 # ---------------------------------------------------------------------- Test watermark
 def test_watermark_css_is_defined():
     """Watermark CSS constant should be defined."""
-    assert hasattr(pdf, 'WATERMARK_CSS')
-    assert '@@@WATERMARK@@@' in pdf.WATERMARK_CSS
-    assert '@@@OPACITY@@@' in pdf.WATERMARK_CSS
+    assert hasattr(pdf, "WATERMARK_CSS")
+    assert "@@@WATERMARK@@@" in pdf.WATERMARK_CSS
+    assert "@@@OPACITY@@@" in pdf.WATERMARK_CSS
 
 
 def test_watermark_css_has_fixed_position():
     """Watermark should be positioned fixed center page."""
-    assert 'position: fixed' in pdf.WATERMARK_CSS
-    assert 'top: 50%' in pdf.WATERMARK_CSS
-    assert 'left: 50%' in pdf.WATERMARK_CSS
-    assert 'transform: translate(-50%, -50%) rotate(-45deg)' in pdf.WATERMARK_CSS
+    assert "position: fixed" in pdf.WATERMARK_CSS
+    assert "top: 50%" in pdf.WATERMARK_CSS
+    assert "left: 50%" in pdf.WATERMARK_CSS
+    assert "transform: translate(-50%, -50%) rotate(-45deg)" in pdf.WATERMARK_CSS
 
 
 def test_watermark_opacity_applied(cfg_base):
@@ -106,8 +105,8 @@ def test_watermark_opacity_applied(cfg_base):
 # ---------------------------------------------------------------------- Test booklet_mode
 def test_booklet_css_is_defined():
     """Booklet mode CSS should be defined."""
-    assert hasattr(pdf, 'BOOKLET_CSS')
-    assert 'size: A5' in pdf.BOOKLET_CSS
+    assert hasattr(pdf, "BOOKLET_CSS")
+    assert "size: A5" in pdf.BOOKLET_CSS
 
 
 def test_pdf_kwargs_booklet_mode(cfg_base, tmp_path):
@@ -115,7 +114,6 @@ def test_pdf_kwargs_booklet_mode(cfg_base, tmp_path):
     cfg_base["booklet_mode"] = True
     cfg_base["page_size"] = "A4"  # Should be overridden to A5
 
-    import os
     path = str(tmp_path / "test.pdf")
     kw = pdf.pdf_kwargs(cfg_base, path)
 
@@ -156,7 +154,7 @@ def test_improved_cover_page_css_includes_gradient():
   text-align: center;
   background: linear-gradient(135deg, #f7f6f3 0%, #e9e9e7 100%);
 }"""
-    assert 'linear-gradient' in cover_css
+    assert "linear-gradient" in cover_css
 
 
 # ---------------------------------------------------------------------- Test combined features
@@ -166,6 +164,7 @@ def test_pdf_kwargs_no_running_header_when_disabled(cfg_base):
     cfg_base["page_numbers"] = False
 
     import os
+
     path = str(os.path.abspath("x.pdf"))
     kw = pdf.pdf_kwargs(cfg_base, path)
 
@@ -184,6 +183,7 @@ def test_pdf_kwargs_with_all_features(cfg_base):
     cfg_base["page_size"] = "A4"
 
     import os
+
     path = str(os.path.abspath("y.pdf"))
     kw = pdf.pdf_kwargs(cfg_base, path)
 
@@ -197,9 +197,9 @@ def test_pdf_kwargs_with_all_features(cfg_base):
 # ---------------------------------------------------------------------- Test watermark_js for page titles
 def test_page_title_js_exists():
     """Page title JS constant should be defined."""
-    assert hasattr(pdf, 'PAGE_TITLE_JS')
-    assert 'pageTitle' in pdf.PAGE_TITLE_JS
-    assert 'querySelector' in pdf.PAGE_TITLE_JS
+    assert hasattr(pdf, "PAGE_TITLE_JS")
+    assert "pageTitle" in pdf.PAGE_TITLE_JS
+    assert "querySelector" in pdf.PAGE_TITLE_JS
 
 
 # ---------------------------------------------------------------------- Test configuration defaults
@@ -229,12 +229,12 @@ def test_phase13_default_values():
 def test_watermark_escapes_quotes():
     """Watermark text with quotes should be escaped in CSS."""
     wm_text = 'Test "Quoted" Text'
-    escaped = wm_text.replace('\\', '\\\\').replace('"', '\\"')
+    escaped = wm_text.replace("\\", "\\\\").replace('"', '\\"')
     assert '"' not in escaped or '\\"' in escaped  # Quotes should be escaped
 
 
 def test_watermark_escapes_backslashes():
     """Watermark text with backslashes should be escaped in CSS."""
-    wm_text = 'Test\\Text'
-    escaped = wm_text.replace('\\', '\\\\')
-    assert '\\\\' in escaped
+    wm_text = "Test\\Text"
+    escaped = wm_text.replace("\\", "\\\\")
+    assert "\\\\" in escaped

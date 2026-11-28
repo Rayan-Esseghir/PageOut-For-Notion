@@ -1,13 +1,11 @@
 """EPUB renderer (reads IR only)."""
 
 import uuid
-from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
-from pageout.core.ir import LIST_KINDS, Asset, plain_text
+from pageout.core.ir import plain_text
 from pageout.renderers.base import R
-from pageout.renderers.html import blocks_html, esc, wrap_html
+from pageout.renderers.html import blocks_html, esc
 
 
 def build_epub(title: str, icon_text: str, rows: list, tree, r: R, path: str, cfg: dict) -> None:
@@ -32,29 +30,26 @@ def build_epub(title: str, icon_text: str, rows: list, tree, r: R, path: str, cf
     # Description
     desc = cfg.get("epub_description", "Notion export")
     if desc:
-        book.add_metadata('DC', 'description', desc)
+        book.add_metadata("DC", "description", desc)
 
     # Publisher
     publisher = cfg.get("epub_publisher", "PageOut for Notion")
-    book.add_metadata('DC', 'publisher', publisher)
+    book.add_metadata("DC", "publisher", publisher)
 
     # Create CSS style
     style = cfg.get("custom_css", "") or _EPUB_CSS
     nav_css = epub.EpubItemcss()
     nav_css = epub.EpubItem(
-        id="style",
-        file_name="style/nav.css",
-        media_type="text/css",
-        content=style if style else _EPUB_CSS
+        id="style", file_name="style/nav.css", media_type="text/css", content=style if style else _EPUB_CSS
     )
     book.add_item(nav_css)
 
     # Create table of contents
     toc = epub.EpubHtml(
-        title='Table of Contents',
-        file_name='toc.xhtml',
+        title="Table of Contents",
+        file_name="toc.xhtml",
         lang=cfg.get("epub_language", "en"),
-        content=_build_toc(title, rows, cfg)
+        content=_build_toc(title, rows, cfg),
     )
     book.add_item(toc)
 
@@ -65,16 +60,10 @@ def build_epub(title: str, icon_text: str, rows: list, tree, r: R, path: str, cf
         icon_html = _page_icon_html(icon_text, cfg)
         body_content = icon_html + body_content
 
-    main_content = _EPUB_PAGE_TEMPLATE.format(
-        title=esc(title),
-        body=body_content
-    )
+    main_content = _EPUB_PAGE_TEMPLATE.format(title=esc(title), body=body_content)
 
     main_item = epub.EpubHtml(
-        title=title,
-        file_name='content.xhtml',
-        lang=cfg.get("epub_language", "en"),
-        content=main_content
+        title=title, file_name="content.xhtml", lang=cfg.get("epub_language", "en"), content=main_content
     )
     book.add_item(main_item)
 
@@ -82,16 +71,16 @@ def build_epub(title: str, icon_text: str, rows: list, tree, r: R, path: str, cf
     chapters = []
     for sub in _extract_chapters(tree):
         chap = epub.EpubHtml(
-            title=sub['title'],
+            title=sub["title"],
             file_name=f"chapter-{sub['id']}.xhtml",
             lang=cfg.get("epub_language", "en"),
-            content=_build_chapter(sub, cfg)
+            content=_build_chapter(sub, cfg),
         )
         book.add_item(chap)
         chapters.append(chap)
 
     # Define spine
-    book.spine = ['nav', toc] + [main_item] + chapters
+    book.spine = ["nav", toc] + [main_item] + chapters
 
     # Define navigation
     nav = epub.EpubNav()
@@ -101,7 +90,6 @@ def build_epub(title: str, icon_text: str, rows: list, tree, r: R, path: str, cf
 
     # Build and write
     import shutil
-    from ebooklib.util import create_epub
 
     # Write to a temporary directory
     tmp_dir = Path(path).parent / f".epub_tmp_{uuid.uuid4().hex}"
@@ -151,7 +139,7 @@ def _build_toc(title: str, rows: list, cfg: dict) -> str:
     """Build table of contents page."""
     lines = [f"<h1>{esc(title)}</h1>", '<ol class="toc">']
     for k, v in rows:
-        lines.append(f'<li><span>{esc(k)}: </span><span>{esc(v)}</span></li>')
+        lines.append(f"<li><span>{esc(k)}: </span><span>{esc(v)}</span></li>")
     lines.append("</ol>")
 
     return f"""<!DOCTYPE html>
@@ -192,17 +180,9 @@ def _extract_chapters(tree) -> list:
         for b in blocks:
             if b.kind == "heading" and b.level == 1:
                 # Found a potential chapter heading
-                chapters.append({
-                    'id': str(len(chapters) + 1),
-                    'title': plain_text(b.text),
-                    'blocks': b.children or []
-                })
+                chapters.append({"id": str(len(chapters) + 1), "title": plain_text(b.text), "blocks": b.children or []})
             elif b.kind == "child_page" and b.sub:
-                chapters.append({
-                    'id': str(len(chapters) + 1),
-                    'title': b.sub.title,
-                    'blocks': b.sub.blocks
-                })
+                chapters.append({"id": str(len(chapters) + 1), "title": b.sub.title, "blocks": b.sub.blocks})
             walk_blocks(b.children, depth + 1)
 
     walk_blocks(tree)
@@ -213,16 +193,16 @@ def _build_chapter(chapter: dict, cfg: dict) -> str:
     """Build chapter content."""
     r = R(cfg, "epub")
     img_counter = [0]
-    body = blocks_html(chapter.get('blocks', []), r, img_counter)
+    body = blocks_html(chapter.get("blocks", []), r, img_counter)
     return f"""<!DOCTYPE html>
 <html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
 <head>
     <meta charset="UTF-8" />
-    <title>{esc(chapter['title'])}</title>
+    <title>{esc(chapter["title"])}</title>
     <link rel="stylesheet" type="text/css" href="../style/nav.css" />
 </head>
 <body>
-<h1>{esc(chapter['title'])}</h1>
+<h1>{esc(chapter["title"])}</h1>
 {body}
 </body>
 </html>

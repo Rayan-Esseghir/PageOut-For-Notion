@@ -5,16 +5,16 @@ Collects system information to help users troubleshoot export issues.
 
 import os
 import platform
-import sys
 import subprocess
-import tempfile
-from typing import Dict, List, Optional, Tuple
+import sys
 from dataclasses import dataclass
+from typing import Dict, List, Optional, Tuple
 
 
 @dataclass
 class DiagnosticResult:
     """Result of a single diagnostic check."""
+
     name: str
     status: str  # "OK", "WARNING", "ERROR", "INFO"
     message: str
@@ -73,15 +73,10 @@ class DiagnosticsCollector:
                 status="ERROR",
                 message=f"{version_str} - Too old",
                 detail="Python 3.8 or later is required.",
-                critical=True
+                critical=True,
             )
 
-        return DiagnosticResult(
-            name="Python Version",
-            status="OK",
-            message=version_str,
-            detail="Required: Python 3.8+"
-        )
+        return DiagnosticResult(name="Python Version", status="OK", message=version_str, detail="Required: Python 3.8+")
 
     def check_os_info(self) -> DiagnosticResult:
         """Get operating system information."""
@@ -90,23 +85,18 @@ class DiagnosticsCollector:
         arch = platform.machine()
 
         details = f"{os_name} {os_version} ({arch})"
-        return DiagnosticResult(
-            name="Operating System",
-            status="OK",
-            message=f"{os_name} {arch}",
-            detail=details
-        )
+        return DiagnosticResult(name="Operating System", status="OK", message=f"{os_name} {arch}", detail=details)
 
     def check_network(self) -> DiagnosticResult:
         """Check network connectivity to Notion API."""
         try:
-            import urllib.request
             import urllib.error
+            import urllib.request
 
             url = "https://api.notion.com/v1/databases"
-            req = urllib.request.Request(url, method='HEAD')
-            req.add_header('Authorization', 'Bearer dummy_token')
-            req.add_header('Notion-Version', '2022-06-28')
+            req = urllib.request.Request(url, method="HEAD")
+            req.add_header("Authorization", "Bearer dummy_token")
+            req.add_header("Notion-Version", "2022-06-28")
 
             with urllib.request.urlopen(req, timeout=5) as response:
                 # We're checking if we can reach the API endpoint
@@ -116,14 +106,14 @@ class DiagnosticsCollector:
                         name="Network Connectivity",
                         status="OK",
                         message="Can reach Notion API",
-                        detail="Network access to notion.so is working"
+                        detail="Network access to notion.so is working",
                     )
                 else:
                     return DiagnosticResult(
                         name="Network Connectivity",
                         status="OK",
                         message=f"HTTP {response.status}",
-                        detail="Notion API reachable"
+                        detail="Notion API reachable",
                     )
         except urllib.error.HTTPError as e:
             if e.code in (401, 403):
@@ -131,13 +121,13 @@ class DiagnosticsCollector:
                     name="Network Connectivity",
                     status="OK",
                     message="Can reach Notion API",
-                    detail="Network access to notion.so is working"
+                    detail="Network access to notion.so is working",
                 )
             return DiagnosticResult(
                 name="Network Connectivity",
                 status="WARNING",
                 message=f"HTTP {e.code}",
-                detail=f"Network issue: {e.reason}"
+                detail=f"Network issue: {e.reason}",
             )
         except urllib.error.URLError as e:
             return DiagnosticResult(
@@ -145,19 +135,16 @@ class DiagnosticsCollector:
                 status="ERROR",
                 message="Cannot reach Notion API",
                 detail=str(e.reason),
-                critical=True
+                critical=True,
             )
         except Exception as e:
             return DiagnosticResult(
-                name="Network Connectivity",
-                status="WARNING",
-                message="Network check inconclusive",
-                detail=str(e)
+                name="Network Connectivity", status="WARNING", message="Network check inconclusive", detail=str(e)
             )
 
     def check_write_access(self) -> DiagnosticResult:
         """Check write access to config folder."""
-        from pageout.core.config import CONFIG_DIR, CONFIG_FILE
+        from pageout.core.config import CONFIG_DIR
 
         try:
             os.makedirs(CONFIG_DIR, exist_ok=True)
@@ -169,10 +156,7 @@ class DiagnosticsCollector:
             os.remove(test_file)
 
             return DiagnosticResult(
-                name="Write Access",
-                status="OK",
-                message=f"{CONFIG_DIR}",
-                detail="Config folder is writable"
+                name="Write Access", status="OK", message=f"{CONFIG_DIR}", detail="Config folder is writable"
             )
         except PermissionError as e:
             return DiagnosticResult(
@@ -180,15 +164,10 @@ class DiagnosticsCollector:
                 status="ERROR",
                 message=str(e),
                 detail=f"Cannot write to {CONFIG_DIR}",
-                critical=True
+                critical=True,
             )
         except Exception as e:
-            return DiagnosticResult(
-                name="Write Access",
-                status="WARNING",
-                message="Write check failed",
-                detail=str(e)
-            )
+            return DiagnosticResult(name="Write Access", status="WARNING", message="Write check failed", detail=str(e))
 
     def check_chromium(self) -> DiagnosticResult:
         """Check for Chromium/Chrome browser for Browser engine."""
@@ -198,16 +177,14 @@ class DiagnosticsCollector:
             r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
             r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
             r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
-            r"C:\Users\%s\AppData\Local\Google\Chrome\Application\chrome.exe" % (os.environ.get("USERPROFILE", "").split("\\")[-1] if "\\" in os.environ.get("USERPROFILE", "") else ""),
+            r"C:\Users\%s\AppData\Local\Google\Chrome\Application\chrome.exe"
+            % (os.environ.get("USERPROFILE", "").split("\\")[-1] if "\\" in os.environ.get("USERPROFILE", "") else ""),
         ]
 
         for path in chrome_paths:
             if os.path.exists(path):
                 return DiagnosticResult(
-                    name="Browser (Chromium)",
-                    status="OK",
-                    message="Chrome/Chromium found",
-                    detail=path
+                    name="Browser (Chromium)", status="OK", message="Chrome/Chromium found", detail=path
                 )
 
         # Try to find via 'where' command on Windows
@@ -219,7 +196,7 @@ class DiagnosticsCollector:
                         name="Browser (Chromium)",
                         status="OK",
                         message="Chrome found in PATH",
-                        detail=result.stdout.split()[0]
+                        detail=result.stdout.split()[0],
                     )
             except Exception:
                 pass
@@ -229,7 +206,7 @@ class DiagnosticsCollector:
             status="WARNING",
             message="Browser engine needs Chrome/Chromium",
             detail="Install Google Chrome or Microsoft Edge for Browser engine exports",
-            critical=False
+            critical=False,
         )
 
     def check_token(self) -> DiagnosticResult:
@@ -241,7 +218,7 @@ class DiagnosticsCollector:
                 name="Notion Token",
                 status="INFO",
                 message="No token configured",
-                detail="Create integration at notion.so/my-integrations"
+                detail="Create integration at notion.so/my-integrations",
             )
 
         # Check token format (basic validation)
@@ -250,14 +227,14 @@ class DiagnosticsCollector:
                 name="Notion Token",
                 status="WARNING",
                 message="Token looks invalid",
-                detail="Token too short - check at notion.so/my-integrations"
+                detail="Token too short - check at notion.so/my-integrations",
             )
 
         return DiagnosticResult(
             name="Notion Token",
             status="OK",
             message="Token configured",
-            detail="Integration token present in config/keyring"
+            detail="Integration token present in config/keyring",
         )
 
     def check_fonts(self) -> DiagnosticResult:
@@ -266,6 +243,7 @@ class DiagnosticsCollector:
             try:
                 import tkinter as tk
                 import tkinter.font as tkfont
+
                 root = tk.Tk()
                 installed = set(f for f in tkfont.families(root) if not f.startswith("@"))
                 root.destroy()
@@ -281,22 +259,14 @@ class DiagnosticsCollector:
                     name="Fonts",
                     status="WARNING",
                     message=f"{len(missing)} common fonts not found",
-                    detail=f"Missing: {', '.join(missing)}"
+                    detail=f"Missing: {', '.join(missing)}",
                 )
 
             return DiagnosticResult(
-                name="Fonts",
-                status="OK",
-                message="Common fonts installed",
-                detail=f"{len(installed)} fonts available"
+                name="Fonts", status="OK", message="Common fonts installed", detail=f"{len(installed)} fonts available"
             )
         except Exception as e:
-            return DiagnosticResult(
-                name="Fonts",
-                status="INFO",
-                message="Font check skipped",
-                detail=str(e)
-            )
+            return DiagnosticResult(name="Fonts", status="INFO", message="Font check skipped", detail=str(e))
 
     def check_keyring(self) -> DiagnosticResult:
         """Check OS keyring availability for secret storage."""
@@ -307,7 +277,7 @@ class DiagnosticsCollector:
                 name="OS Keyring",
                 status="OK",
                 message="Keyring available",
-                detail="Secrets will be stored securely in OS credential store"
+                detail="Secrets will be stored securely in OS credential store",
             )
 
         allow_plaintext = self.cfg.get("allow_plaintext_secrets", False)
@@ -317,25 +287,25 @@ class DiagnosticsCollector:
                 name="OS Keyring",
                 status="WARNING",
                 message="No keyring - using plain text",
-                detail="Install 'pip install keyring' for secure storage, or allow plain-text storage"
+                detail="Install 'pip install keyring' for secure storage, or allow plain-text storage",
             )
 
         return DiagnosticResult(
             name="OS Keyring",
             status="WARNING",
             message="Keyring not available",
-            detail="Install 'pip install keyring' for secure token storage"
+            detail="Install 'pip install keyring' for secure token storage",
         )
 
     def check_app_version(self) -> DiagnosticResult:
         """Check application version."""
-        from pageout.core.config import APP_NAME, APP_VERSION, APP_STAGE
+        from pageout.core.config import APP_NAME, APP_STAGE, APP_VERSION
 
         return DiagnosticResult(
             name="App Version",
             status="INFO",
             message=f"{APP_NAME} {APP_VERSION} ({APP_STAGE})",
-            detail="Current running version"
+            detail="Current running version",
         )
 
 
@@ -348,13 +318,7 @@ def run_diagnostics(cfg: Optional[Dict] = None) -> List[Dict]:
     results = collector.run_all()
 
     return [
-        {
-            "name": r.name,
-            "status": r.status,
-            "message": r.message,
-            "detail": r.detail,
-            "critical": r.critical
-        }
+        {"name": r.name, "status": r.status, "message": r.message, "detail": r.detail, "critical": r.critical}
         for r in results
     ]
 

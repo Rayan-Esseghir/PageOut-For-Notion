@@ -11,6 +11,7 @@ def test_tkinter_import_or_skip():
     global tk_import_error
     try:
         import tkinter
+
         tkinter.Tk()  # Try to create a root
         return True
     except Exception as e:
@@ -39,18 +40,16 @@ def test_binding_registry_complete(tmp_path):
     }
 
     # Import the app module to check what's actually bound
-    from pageout.gui import app
-
     # Get all keys that are bound in the V dictionary
     # We need to simulate App initialization
     import tkinter as tk
-    import tkinter.font as tkfont
-    from tkinter import ttk
+
+    from pageout.gui import app
 
     # Create a minimal app instance to check bindings
     class MinimalApp:
         def __init__(self):
-            self.cfg0 = app.load_config() if hasattr(app, 'load_config') else {}
+            self.cfg0 = app.load_config() if hasattr(app, "load_config") else {}
             # Initialize V dict the same way App does
             self.V = {}
             for key, default in DEFAULTS.items():
@@ -97,20 +96,20 @@ def test_headless_gui_smoke():
     from pageout.gui import i18n, theme, widgets
 
     # Verify i18n module
-    assert hasattr(i18n, 'EN')
-    assert hasattr(i18n, 'get_string')
-    assert hasattr(i18n, '_')
-    assert i18n.get_string('tab_source') == "1  Source"
+    assert hasattr(i18n, "EN")
+    assert hasattr(i18n, "get_string")
+    assert hasattr(i18n, "_")
+    assert i18n.get_string("tab_source") == "1  Source"
 
     # Verify theme module
-    assert hasattr(theme, 'ThemeManager')
-    assert hasattr(theme, 'HiDPISupport')
-    assert hasattr(theme, 'LIGHT_THEMES')
-    assert hasattr(theme, 'DARK_THEMES')
+    assert hasattr(theme, "ThemeManager")
+    assert hasattr(theme, "HiDPISupport")
+    assert hasattr(theme, "LIGHT_THEMES")
+    assert hasattr(theme, "DARK_THEMES")
 
     # Verify widgets module
-    assert hasattr(widgets, 'ScrollableFrame')
-    assert hasattr(widgets, 'create_tool_tip')
+    assert hasattr(widgets, "ScrollableFrame")
+    assert hasattr(widgets, "create_tool_tip")
 
 
 def test_headless_gui_instantiation():
@@ -118,6 +117,7 @@ def test_headless_gui_instantiation():
     # Skip if tkinter is fully available - we want headless test
     try:
         import tkinter as tk
+
         root = tk.Tk()
         root.destroy()
         pytest.skip("Tkinter available - full GUI test would run in interactive mode")
@@ -125,10 +125,10 @@ def test_headless_gui_instantiation():
         pass
 
     # In headless mode, app.py raises SystemExit with clear message
-    from pageout.gui.app import main as gui_main
-
     # Test the headless check
     import pageout.gui.app as app_module
+    from pageout.gui.app import main as gui_main
+
     if app_module.tk is None:
         # This is what happens in headless mode
         with pytest.raises(SystemExit) as exc_info:
@@ -143,15 +143,16 @@ def test_app_module_structure():
     from pageout.gui import app
 
     # Check that essential classes and functions exist
-    assert hasattr(app, 'App')
-    assert hasattr(app, 'ScrollFrame')
-    assert hasattr(app, 'CheckList')
-    assert hasattr(app, 'FontPicker')
-    assert hasattr(app, 'main')
-    assert hasattr(app, 'apply_icon')
+    assert hasattr(app, "App")
+    assert hasattr(app, "ScrollFrame")
+    assert hasattr(app, "CheckList")
+    assert hasattr(app, "FontPicker")
+    assert hasattr(app, "main")
+    assert hasattr(app, "apply_icon")
 
     # Verify App is a class
     from pageout.gui.app import App
+
     assert isinstance(App, type)
 
 
@@ -159,9 +160,10 @@ def test_presenter_module_structure():
     """U1: Verify the Presenter module structure."""
     from pageout.gui import presenter
 
-    assert hasattr(presenter, 'Presenter')
+    assert hasattr(presenter, "Presenter")
 
     from pageout.gui.presenter import Presenter
+
     assert isinstance(Presenter, type)
 
     # Note: main() is in app.py, not presenter.py - presenter is the controller only
@@ -169,16 +171,13 @@ def test_presenter_module_structure():
 
 def test_gui_widgets_reusable():
     """U1: Test that widget helper functions work correctly."""
-    from pageout.gui.widgets import (
-        Frame,
-        add_font_field,
-        add_checkbox,
-        add_spinbox,
-        add_combobox,
-    )
-
     # Test Frame class
     import tkinter as tk
+
+    from pageout.gui.widgets import (
+        Frame,
+    )
+
     root = tk.Tk()
     try:
         frame = Frame(root)
@@ -194,9 +193,10 @@ def test_gui_widgets_reusable():
 
 def test_theme_manager_initialization():
     """U1: Test ThemeManager can be initialized."""
+    import tkinter as tk
+
     from pageout.gui.theme import ThemeManager
 
-    import tkinter as tk
     root = tk.Tk()
     try:
         tm = ThemeManager(root)
@@ -214,9 +214,10 @@ def test_theme_manager_initialization():
 
 def test_hidpi_support():
     """U1: Test HiDPI support module."""
+    import tkinter as tk
+
     from pageout.gui.theme import HiDPISupport
 
-    import tkinter as tk
     root = tk.Tk()
     try:
         # Should not raise on non-Windows or if ctypes fails
@@ -259,34 +260,39 @@ def test_i18n_strings_complete():
 def test_u6_onboarding_wizard_method_exists():
     """U6: Verify onboarding wizard method exists."""
     from pageout.gui import presenter
-    assert hasattr(presenter.Presenter, 'show_onboarding_wizard')
+
+    assert hasattr(presenter.Presenter, "show_onboarding_wizard")
 
 
 def test_u6_check_my_setup_method_exists():
     """U6: Verify check_my_setup method exists."""
     from pageout.gui import presenter
-    assert hasattr(presenter.Presenter, 'check_my_setup')
+
+    assert hasattr(presenter.Presenter, "check_my_setup")
 
 
 def test_u6_show_about_method_exists():
     """U6: Verify show_about method exists."""
     from pageout.gui import presenter
-    assert hasattr(presenter.Presenter, 'show_about')
+
+    assert hasattr(presenter.Presenter, "show_about")
 
 
 def test_u6_copy_diagnostics_method_exists():
     """U6: Verify copy diagnostics method exists."""
     from pageout.gui import presenter
-    assert hasattr(presenter.Presenter, '_copy_diagnostics_to_clipboard')
+
+    assert hasattr(presenter.Presenter, "_copy_diagnostics_to_clipboard")
 
 
 def test_u6_diagnostics_module_exists():
     """U6: Verify diagnostics module has required functions."""
     from pageout.core import diagnostics
-    assert hasattr(diagnostics, 'run_diagnostics')
-    assert hasattr(diagnostics, 'get_diagnostics_summary')
-    assert hasattr(diagnostics, 'DiagnosticResult')
-    assert hasattr(diagnostics, 'DiagnosticsCollector')
+
+    assert hasattr(diagnostics, "run_diagnostics")
+    assert hasattr(diagnostics, "get_diagnostics_summary")
+    assert hasattr(diagnostics, "DiagnosticResult")
+    assert hasattr(diagnostics, "DiagnosticsCollector")
 
 
 def test_u6_secrets_redact_function():

@@ -18,29 +18,40 @@ The presenter handles:
 import json
 import os
 import tkinter as tk
-from tkinter import colorchooser, messagebox, filedialog, ttk
-from typing import Any, Dict, List, Optional, Tuple
+from tkinter import colorchooser, filedialog, messagebox, ttk
+from typing import Any, Dict, Optional, Tuple
 
-from pageout.core.config import load_config, DEFAULTS, save_config, CONFIG_DIR, APP_NAME, APP_VERSION, APP_STAGE
-from pageout.core.diagnostics import run_diagnostics, get_diagnostics_summary
-from pageout.core.errors import Cancelled
-from pageout.core.pipeline import Exporter, export
-from pageout.core.secrets import keyring_available, redact
+from pageout.core.config import APP_NAME, APP_STAGE, APP_VERSION, CONFIG_DIR, DEFAULTS, load_config, save_config
+from pageout.core.diagnostics import run_diagnostics
+from pageout.core.pipeline import Exporter
 from pageout.core.profiles import (
-    list_profiles, save_profile, load_profile, delete_profile, profile_exists,
-    merge_profile_into_config
+    delete_profile,
+    list_profiles,
+    load_profile,
+    merge_profile_into_config,
+    save_profile,
 )
-from pageout.core.sources import (
-    list_sources, get_source, add_source, delete_source, toggle_pin,
-    get_recent_sources, extract_id_from_url, source_exists
-)
-from pageout.core.queue import ExportQueue, ExportJob, JobStatus, JobPriority
+from pageout.core.queue import ExportJob, ExportQueue, JobPriority, JobStatus
 from pageout.core.scheduler import (
-    add_schedule, remove_schedule, list_schedules, get_schedule,
-    ScheduledTask, ScheduleStatus, register_schedule, unregister_schedule,
-    get_scheduled_tasks, enable_schedule, disable_schedule
+    ScheduleStatus,
+    add_schedule,
+    disable_schedule,
+    enable_schedule,
+    get_schedule,
+    list_schedules,
+    remove_schedule,
 )
-from pageout.gui.i18n import EN, get_string, _
+from pageout.core.secrets import redact
+from pageout.core.sources import (
+    add_source,
+    delete_source,
+    extract_id_from_url,
+    get_recent_sources,
+    get_source,
+    list_sources,
+    toggle_pin,
+)
+from pageout.gui.i18n import EN, _
 
 
 class Presenter:
@@ -86,7 +97,7 @@ class Presenter:
         # Auto-save logic - debounced to avoid excessive writes
         if self.app.V.get("prefs_auto_save", tk.BooleanVar(value=True)).get():
             # Cancel any pending auto-save
-            if hasattr(self, '_auto_save_after_id'):
+            if hasattr(self, "_auto_save_after_id"):
                 self.root.after_cancel(self._auto_save_after_id)
             # Schedule auto-save with debounce (500ms)
             self._auto_save_after_id = self.root.after(500, self._auto_save_config)
@@ -97,16 +108,16 @@ class Presenter:
             c = self.app.collect()
             save_config(c)
             self._unsaved_changes = False
-            self._last_config_save = __import__('datetime').datetime.now()
+            self._last_config_save = __import__("datetime").datetime.now()
         except Exception:
             # Silently ignore auto-save failures
             pass
 
     def _update_tooltip_delays(self, *args):
         """Update tooltip delays when the preference changes."""
-        delay = self.prefs_tooltip_delay.get() if hasattr(self, 'prefs_tooltip_delay') else 500
+        delay = self.prefs_tooltip_delay.get() if hasattr(self, "prefs_tooltip_delay") else 500
         # Update all existing tooltips in the app
-        if hasattr(self.app, '_tooltips'):
+        if hasattr(self.app, "_tooltips"):
             for tooltip in self.app._tooltips:
                 tooltip.update_delay(delay)
 
@@ -130,6 +141,7 @@ class Presenter:
     def reset_config_from_file(self):
         """Reset UI config from the current config file."""
         import json as _json
+
         try:
             self.cfg = load_config()
             # Update all UI variables from loaded config
@@ -152,8 +164,8 @@ class Presenter:
                         self.app.V[key].set(str(val))
             # Update unsaved changes tracking
             self._unsaved_changes = False
-            self._last_config_save = __import__('datetime').datetime.now()
-        except Exception as e:
+            self._last_config_save = __import__("datetime").datetime.now()
+        except Exception:
             # Log but don't crash
             pass
 
@@ -184,21 +196,29 @@ class Presenter:
 
         # Check for missing folder
         if not c["save_dir"].strip():
-            messagebox.showerror("Missing folder", EN.get("missing_folder_msg", "Choose an output folder on the Output tab."))
+            messagebox.showerror(
+                "Missing folder", EN.get("missing_folder_msg", "Choose an output folder on the Output tab.")
+            )
             return False
 
         # Check for Gemini math OCR requirements
         if c.get("gemini_math_ocr"):
-            if not hasattr(__import__('pageout.ocr.gemini', fromlist=['_GENAI_AVAILABLE']), '_GENAI_AVAILABLE'):
+            if not hasattr(__import__("pageout.ocr.gemini", fromlist=["_GENAI_AVAILABLE"]), "_GENAI_AVAILABLE"):
                 messagebox.showerror(
                     "Package Missing",
-                    EN.get("genai_required", "The 'google-genai' library is required for Gemini Math OCR.\n\nPlease install it with:\n  pip install google-genai"),
+                    EN.get(
+                        "genai_required",
+                        "The 'google-genai' library is required for Gemini Math OCR.\n\nPlease install it with:\n  pip install google-genai",
+                    ),
                 )
                 return False
             if not c.get("gemini_api_key", "").strip():
                 messagebox.showerror(
                     "Gemini API Key Required",
-                    EN.get("gemini_key_required", "Math OCR with Gemini Vision is enabled, but no Gemini API Key was entered.\n\nPlease enter your personal Gemini API key in the 'LaTeX & AI' tab.\nYou can get a free key at:\nhttps://aistudio.google.com/"),
+                    EN.get(
+                        "gemini_key_required",
+                        "Math OCR with Gemini Vision is enabled, but no Gemini API Key was entered.\n\nPlease enter your personal Gemini API key in the 'LaTeX & AI' tab.\nYou can get a free key at:\nhttps://aistudio.google.com/",
+                    ),
                 )
                 return False
 
@@ -209,14 +229,17 @@ class Presenter:
                 return False
 
         # Check if pages need loading
-        shown = self.app.props_list.selected_labels() if hasattr(self.app, 'props_list') else []
+        shown = self.app.props_list.selected_labels() if hasattr(self.app, "props_list") else []
         selected = None
         if self.app.loaded_pages and self.app.loaded_source == c["database"].strip():
-            sel = self.app.pages_list.selected_indices() if hasattr(self.app, 'pages_list') else []
+            sel = self.app.pages_list.selected_indices() if hasattr(self.app, "pages_list") else []
             if not sel:
                 messagebox.showerror(
                     "No pages ticked",
-                    EN.get("no_pages_selected", "Tick at least one page in tab 2, or clear the list by loading pages again."),
+                    EN.get(
+                        "no_pages_selected",
+                        "Tick at least one page in tab 2, or clear the list by loading pages again.",
+                    ),
                 )
                 return False
             selected = [self.app.loaded_pages[i] for i in sel]
@@ -225,15 +248,19 @@ class Presenter:
 
         # Add to queue instead of running directly
         from datetime import datetime
+
         name = f"Export {datetime.now().strftime('%Y-%m-%d %H:%M')}"
         job_id = self.export_queue.add_job(name, c, priority=JobPriority.HIGH)
         self.app.append_log(f"Added to queue: {name} (ID: {job_id})")
 
         # Refresh queue display if open
-        if hasattr(self.app, 'refresh_queue_display'):
+        if hasattr(self.app, "refresh_queue_display"):
             self.app.refresh_queue_display()
 
-        messagebox.showinfo("Added to Queue", f"Job '{name}' added to export queue.\nID: {job_id}\n\nOpen 'Tools > Export Queue' to monitor progress.")
+        messagebox.showinfo(
+            "Added to Queue",
+            f"Job '{name}' added to export queue.\nID: {job_id}\n\nOpen 'Tools > Export Queue' to monitor progress.",
+        )
         return True
 
     def _export_done(self, res, timing_summary):
@@ -243,7 +270,7 @@ class Presenter:
         skipped = res.skipped
         text = f"Exported {count - skipped} page(s)."
         if skipped:
-            text += f"\n{skipped} unchanged page(s) skipped (tick \"Force full re-export\" to redo them)."
+            text += f'\n{skipped} unchanged page(s) skipped (tick "Force full re-export" to redo them).'
         if timing_summary:
             text += f"\n\nTiming: {timing_summary}"
         text += f"\n\n{res.out_dir}"
@@ -300,10 +327,10 @@ class Presenter:
 
     def _update_queue_status(self):
         """Update the queue status display in the main window."""
-        if hasattr(self.app, 'queue_status'):
+        if hasattr(self.app, "queue_status"):
             stats = self.export_queue.get_stats()
-            running = stats.get('running', 0)
-            pending = stats.get('pending', 0)
+            running = stats.get("running", 0)
+            pending = stats.get("pending", 0)
             if running > 0:
                 self.app.queue_status.set(f"Queue: {running} running, {pending} pending")
             elif pending > 0:
@@ -313,20 +340,23 @@ class Presenter:
 
     def _update_queue_ui(self, job: ExportJob):
         """Update UI for a queue job."""
-        if hasattr(self.app, 'queue_tree'):
+        if hasattr(self.app, "queue_tree"):
             # Update tree item
             for item in self.app.queue_tree.get_children():
                 if self.app.queue_tree.item(item, "values")[0] == job.id:
                     status = job.status.value
                     progress_pct = int(job.progress * 100)
-                    self.app.queue_tree.item(item, values=(
-                        job.id,
-                        job.name,
-                        status,
-                        f"{progress_pct}%",
-                        f"{job.current_page}/{job.total_pages}",
-                        job.message[:50],
-                    ))
+                    self.app.queue_tree.item(
+                        item,
+                        values=(
+                            job.id,
+                            job.name,
+                            status,
+                            f"{progress_pct}%",
+                            f"{job.current_page}/{job.total_pages}",
+                            job.message[:50],
+                        ),
+                    )
                     break
 
         # If this is the running job, update progress bar
@@ -355,7 +385,7 @@ class Presenter:
             self.app.append_log(f"Job '{job.name}' cancelled")
 
         # Refresh queue display
-        if hasattr(self.app, 'refresh_queue_display'):
+        if hasattr(self.app, "refresh_queue_display"):
             self.app.refresh_queue_display()
 
     def add_to_queue(self, name: str = None, priority: JobPriority = JobPriority.NORMAL):
@@ -371,16 +401,22 @@ class Presenter:
 
         # Check for Gemini math OCR requirements
         if c.get("gemini_math_ocr"):
-            if not hasattr(__import__('pageout.ocr.gemini', fromlist=['_GENAI_AVAILABLE']), '_GENAI_AVAILABLE'):
+            if not hasattr(__import__("pageout.ocr.gemini", fromlist=["_GENAI_AVAILABLE"]), "_GENAI_AVAILABLE"):
                 messagebox.showerror(
                     "Package Missing",
-                    EN.get("genai_required", "The 'google-genai' library is required for Gemini Math OCR.\n\nPlease install it with:\n  pip install google-genai"),
+                    EN.get(
+                        "genai_required",
+                        "The 'google-genai' library is required for Gemini Math OCR.\n\nPlease install it with:\n  pip install google-genai",
+                    ),
                 )
                 return
             if not c.get("gemini_api_key", "").strip():
                 messagebox.showerror(
                     "Gemini API Key Required",
-                    EN.get("gemini_key_required", "Math OCR with Gemini Vision is enabled, but no Gemini API Key was entered.\n\nPlease enter your personal Gemini API key in the 'LaTeX & AI' tab.\nYou can get a free key at:\nhttps://aistudio.google.com/"),
+                    EN.get(
+                        "gemini_key_required",
+                        "Math OCR with Gemini Vision is enabled, but no Gemini API Key was entered.\n\nPlease enter your personal Gemini API key in the 'LaTeX & AI' tab.\nYou can get a free key at:\nhttps://aistudio.google.com/",
+                    ),
                 )
                 return
 
@@ -393,17 +429,21 @@ class Presenter:
         # Generate job name
         if not name:
             from datetime import datetime
+
             name = f"Export {datetime.now().strftime('%Y-%m-%d %H:%M')}"
 
         # Check if pages need loading
-        shown = self.app.props_list.selected_labels() if hasattr(self.app, 'props_list') else []
+        shown = self.app.props_list.selected_labels() if hasattr(self.app, "props_list") else []
         selected = None
         if self.app.loaded_pages and self.app.loaded_source == c["database"].strip():
-            sel = self.app.pages_list.selected_indices() if hasattr(self.app, 'pages_list') else []
+            sel = self.app.pages_list.selected_indices() if hasattr(self.app, "pages_list") else []
             if not sel:
                 messagebox.showerror(
                     "No pages ticked",
-                    EN.get("no_pages_selected", "Tick at least one page in tab 2, or clear the list by loading pages again."),
+                    EN.get(
+                        "no_pages_selected",
+                        "Tick at least one page in tab 2, or clear the list by loading pages again.",
+                    ),
                 )
                 return
             selected = [self.app.loaded_pages[i] for i in sel]
@@ -415,7 +455,7 @@ class Presenter:
         self.app.append_log(f"Added to queue: {name} (ID: {job_id})")
 
         # Refresh queue display
-        if hasattr(self.app, 'refresh_queue_display'):
+        if hasattr(self.app, "refresh_queue_display"):
             self.app.refresh_queue_display()
 
         messagebox.showinfo("Added to Queue", f"Job '{name}' added to export queue.\nID: {job_id}")
@@ -428,14 +468,18 @@ class Presenter:
         dialog.transient(self.root)
         dialog.grab_set()
 
-        ttk = __import__('tkinter.ttk', fromlist=['*'])
+        ttk = __import__("tkinter.ttk", fromlist=["*"])
 
         # Toolbar
         toolbar = ttk.Frame(dialog)
         toolbar.pack(fill="x", padx=10, pady=5)
 
-        ttk.Button(toolbar, text=_("schedule_add_button"), command=lambda: self._show_add_schedule_dialog(dialog)).pack(side="left", padx=5)
-        ttk.Button(toolbar, text=_("schedule_refresh"), command=lambda: self._refresh_schedule_tree()).pack(side="left", padx=5)
+        ttk.Button(toolbar, text=_("schedule_add_button"), command=lambda: self._show_add_schedule_dialog(dialog)).pack(
+            side="left", padx=5
+        )
+        ttk.Button(toolbar, text=_("schedule_refresh"), command=lambda: self._refresh_schedule_tree()).pack(
+            side="left", padx=5
+        )
         ttk.Button(toolbar, text=_("schedule_close"), command=dialog.destroy).pack(side="right", padx=5)
 
         # Treeview for schedules
@@ -469,17 +513,25 @@ class Presenter:
         action_frame = ttk.Frame(dialog)
         action_frame.pack(fill="x", padx=10, pady=5)
 
-        ttk.Button(action_frame, text=_("schedule_action_enable"), command=lambda: self._schedule_toggle_status(dialog)).pack(side="left", padx=5)
-        ttk.Button(action_frame, text=_("schedule_action_disable"), command=lambda: self._schedule_toggle_status(dialog)).pack(side="left", padx=5)
-        ttk.Button(action_frame, text=_("schedule_action_edit"), command=lambda: self._show_add_schedule_dialog(dialog)).pack(side="left", padx=5)
-        ttk.Button(action_frame, text=_("schedule_action_remove"), command=lambda: self._schedule_remove(dialog)).pack(side="left", padx=5)
+        ttk.Button(
+            action_frame, text=_("schedule_action_enable"), command=lambda: self._schedule_toggle_status(dialog)
+        ).pack(side="left", padx=5)
+        ttk.Button(
+            action_frame, text=_("schedule_action_disable"), command=lambda: self._schedule_toggle_status(dialog)
+        ).pack(side="left", padx=5)
+        ttk.Button(
+            action_frame, text=_("schedule_action_edit"), command=lambda: self._show_add_schedule_dialog(dialog)
+        ).pack(side="left", padx=5)
+        ttk.Button(action_frame, text=_("schedule_action_remove"), command=lambda: self._schedule_remove(dialog)).pack(
+            side="left", padx=5
+        )
 
         # Initial load
         self._refresh_schedule_tree()
 
     def _refresh_schedule_tree(self):
         """Refresh the schedule treeview."""
-        tree = getattr(self.app, 'schedule_tree', None)
+        tree = getattr(self.app, "schedule_tree", None)
         if not tree:
             return
 
@@ -496,30 +548,38 @@ class Presenter:
 
         for s in schedules:
             formats_str = ", ".join(s.formats) if s.formats else "md"
-            tree.insert("", "end", values=(
-                s.id,
-                s.name,
-                s.source[:40] + "..." if len(s.source) > 40 else s.source,
-                formats_str,
-                s.schedule,
-                s.status.value,
-                s.last_run or "never",
-            ))
+            tree.insert(
+                "",
+                "end",
+                values=(
+                    s.id,
+                    s.name,
+                    s.source[:40] + "..." if len(s.source) > 40 else s.source,
+                    formats_str,
+                    s.schedule,
+                    s.status.value,
+                    s.last_run or "never",
+                ),
+            )
 
     def _show_add_schedule_dialog(self, parent=None):
         """Show dialog to add or edit a schedule."""
         dialog = tk.Toplevel(self.root)
-        dialog.title(_("schedule_add_button") if not hasattr(self, '_edit_schedule_mode') or not self._edit_schedule_mode else _("schedule_action_edit"))
+        dialog.title(
+            _("schedule_add_button")
+            if not hasattr(self, "_edit_schedule_mode") or not self._edit_schedule_mode
+            else _("schedule_action_edit")
+        )
         dialog.transient(self.root)
         dialog.grab_set()
         dialog.geometry("500x450")
 
-        ttk = __import__('tkinter.ttk', fromlist=['*'])
+        ttk = __import__("tkinter.ttk", fromlist=["*"])
 
         # Form fields
         ttk.Label(dialog, text=_("schedule_name_label")).pack(anchor="w", padx=15, pady=(10, 2))
         name_var = tk.StringVar()
-        if hasattr(self, '_edit_schedule_mode') and self._edit_schedule_mode:
+        if hasattr(self, "_edit_schedule_mode") and self._edit_schedule_mode:
             name_var.set(self._edit_schedule_name)
         ttk.Entry(dialog, textvariable=name_var, width=50).pack(fill="x", padx=15, pady=5)
 
@@ -531,7 +591,9 @@ class Presenter:
         output_var = tk.StringVar()
         output_entry = ttk.Entry(dialog, textvariable=output_var, width=50)
         output_entry.pack(fill="x", padx=15, pady=5)
-        ttk.Button(dialog, text="Browse…", command=lambda: self._browse_schedule_output(output_var)).pack(anchor="w", padx=15, pady=(0, 10))
+        ttk.Button(dialog, text="Browse…", command=lambda: self._browse_schedule_output(output_var)).pack(
+            anchor="w", padx=15, pady=(0, 10)
+        )
 
         ttk.Label(dialog, text=_("schedule_formats_label")).pack(anchor="w", padx=15, pady=(10, 2))
         formats_var = tk.StringVar(value="md,pdf")
@@ -553,7 +615,9 @@ class Presenter:
             out = output_var.get()
             fmt = formats_var.get()
             sched = schedule_var.get()
-            preview_label.config(text=f"Will export '{fmt}' to '{out}' {sched} from {source[:30]}{'...' if len(source) > 30 else ''} (schedule: {sched})")
+            preview_label.config(
+                text=f"Will export '{fmt}' to '{out}' {sched} from {source[:30]}{'...' if len(source) > 30 else ''} (schedule: {sched})"
+            )
 
         name_var.trace_add("write", update_preview)
         source_var.trace_add("write", update_preview)
@@ -565,7 +629,7 @@ class Presenter:
 
         def save_and_close():
             try:
-                if hasattr(self, '_edit_schedule_mode') and self._edit_schedule_mode:
+                if hasattr(self, "_edit_schedule_mode") and self._edit_schedule_mode:
                     # Edit mode - use existing ID
                     task_id = add_schedule(
                         name=name_var.get(),
@@ -597,13 +661,14 @@ class Presenter:
     def _browse_schedule_output(self, var):
         """Browse for output directory."""
         from tkinter import filedialog
+
         folder = filedialog.askdirectory()
         if folder:
             var.set(folder)
 
     def _show_schedule_details(self, parent=None):
         """Show details for a selected schedule."""
-        tree = getattr(self.app, 'schedule_tree', None)
+        tree = getattr(self.app, "schedule_tree", None)
         if not tree:
             return
         selection = tree.selection()
@@ -633,7 +698,7 @@ class Presenter:
 
     def _schedule_remove(self, parent=None):
         """Remove a selected schedule."""
-        tree = getattr(self.app, 'schedule_tree', None)
+        tree = getattr(self.app, "schedule_tree", None)
         if not tree:
             return
         selection = tree.selection()
@@ -648,7 +713,7 @@ class Presenter:
 
     def _schedule_toggle_status(self, parent=None):
         """Enable or disable a selected schedule."""
-        tree = getattr(self.app, 'schedule_tree', None)
+        tree = getattr(self.app, "schedule_tree", None)
         if not tree:
             return
         selection = tree.selection()
@@ -682,20 +747,36 @@ class Presenter:
         dialog.transient(self.root)
         dialog.grab_set()
 
-        ttk = __import__('tkinter.ttk', fromlist=['*'])
+        ttk = __import__("tkinter.ttk", fromlist=["*"])
 
         # Toolbar
         toolbar = ttk.Frame(dialog)
         toolbar.pack(fill="x", padx=10, pady=5)
 
-        ttk.Button(toolbar, text="Add Current Settings", command=lambda: [self.add_to_queue(), dialog.destroy()]).pack(side="left", padx=5)
-        ttk.Button(toolbar, text="Pause Selected", command=lambda: self._queue_pause_selected(dialog)).pack(side="left", padx=5)
-        ttk.Button(toolbar, text="Resume Selected", command=lambda: self._queue_resume_selected(dialog)).pack(side="left", padx=5)
-        ttk.Button(toolbar, text="Remove Selected", command=lambda: self._queue_remove_selected(dialog)).pack(side="left", padx=5)
-        ttk.Button(toolbar, text="Cancel Selected", command=lambda: self._queue_cancel_selected(dialog)).pack(side="left", padx=5)
-        ttk.Button(toolbar, text="Retry Selected", command=lambda: self._queue_retry_selected(dialog)).pack(side="left", padx=5)
-        ttk.Button(toolbar, text="Clear History", command=lambda: self._queue_clear_history(dialog)).pack(side="left", padx=5)
-        ttk.Button(toolbar, text="Refresh", command=lambda: self.refresh_queue_display(dialog)).pack(side="right", padx=5)
+        ttk.Button(toolbar, text="Add Current Settings", command=lambda: [self.add_to_queue(), dialog.destroy()]).pack(
+            side="left", padx=5
+        )
+        ttk.Button(toolbar, text="Pause Selected", command=lambda: self._queue_pause_selected(dialog)).pack(
+            side="left", padx=5
+        )
+        ttk.Button(toolbar, text="Resume Selected", command=lambda: self._queue_resume_selected(dialog)).pack(
+            side="left", padx=5
+        )
+        ttk.Button(toolbar, text="Remove Selected", command=lambda: self._queue_remove_selected(dialog)).pack(
+            side="left", padx=5
+        )
+        ttk.Button(toolbar, text="Cancel Selected", command=lambda: self._queue_cancel_selected(dialog)).pack(
+            side="left", padx=5
+        )
+        ttk.Button(toolbar, text="Retry Selected", command=lambda: self._queue_retry_selected(dialog)).pack(
+            side="left", padx=5
+        )
+        ttk.Button(toolbar, text="Clear History", command=lambda: self._queue_clear_history(dialog)).pack(
+            side="left", padx=5
+        )
+        ttk.Button(toolbar, text="Refresh", command=lambda: self.refresh_queue_display(dialog)).pack(
+            side="right", padx=5
+        )
 
         # Queue treeview
         columns = ("id", "name", "status", "progress", "pages", "message")
@@ -731,11 +812,12 @@ class Presenter:
             if dialog.winfo_exists():
                 self.refresh_queue_display(dialog)
                 dialog.after(1000, auto_refresh)
+
         dialog.after(1000, auto_refresh)
 
     def refresh_queue_display(self, dialog=None):
         """Refresh the queue treeview."""
-        tree = getattr(self.app, 'queue_tree', None)
+        tree = getattr(self.app, "queue_tree", None)
         if not tree:
             return
 
@@ -768,14 +850,19 @@ class Presenter:
             elif job.status == JobStatus.PAUSED:
                 tags = ("paused",)
 
-            tree.insert("", "end", values=(
-                job.id,
-                job.name,
-                status,
-                f"{progress_pct}%",
-                pages,
-                msg,
-            ), tags=tags)
+            tree.insert(
+                "",
+                "end",
+                values=(
+                    job.id,
+                    job.name,
+                    status,
+                    f"{progress_pct}%",
+                    pages,
+                    msg,
+                ),
+                tags=tags,
+            )
 
         # Configure tags
         tree.tag_configure("running", background="#e8f5e9")
@@ -792,12 +879,12 @@ class Presenter:
         # Update status bar
         stats = self.export_queue.get_stats()
         status_text = f"Total: {sum(stats.values())}  |  Pending: {stats.get('pending', 0)}  Running: {stats.get('running', 0)}  Completed: {stats.get('completed', 0)}  Failed: {stats.get('failed', 0)}  Cancelled: {stats.get('cancelled', 0)}"
-        if hasattr(self.app, 'queue_status_var'):
+        if hasattr(self.app, "queue_status_var"):
             self.app.queue_status_var.set(status_text)
 
     def _queue_remove_selected(self, dialog):
         """Remove selected job from queue."""
-        tree = getattr(self.app, 'queue_tree', None)
+        tree = getattr(self.app, "queue_tree", None)
         if not tree:
             return
         selection = tree.selection()
@@ -815,7 +902,7 @@ class Presenter:
 
     def _queue_pause_selected(self, dialog):
         """Pause selected job."""
-        tree = getattr(self.app, 'queue_tree', None)
+        tree = getattr(self.app, "queue_tree", None)
         if not tree:
             return
         selection = tree.selection()
@@ -830,7 +917,7 @@ class Presenter:
 
     def _queue_resume_selected(self, dialog):
         """Resume selected job."""
-        tree = getattr(self.app, 'queue_tree', None)
+        tree = getattr(self.app, "queue_tree", None)
         if not tree:
             return
         selection = tree.selection()
@@ -845,7 +932,7 @@ class Presenter:
 
     def _queue_cancel_selected(self, dialog):
         """Cancel selected job."""
-        tree = getattr(self.app, 'queue_tree', None)
+        tree = getattr(self.app, "queue_tree", None)
         if not tree:
             return
         selection = tree.selection()
@@ -860,7 +947,7 @@ class Presenter:
 
     def _queue_retry_selected(self, dialog):
         """Retry selected job."""
-        tree = getattr(self.app, 'queue_tree', None)
+        tree = getattr(self.app, "queue_tree", None)
         if not tree:
             return
         selection = tree.selection()
@@ -881,7 +968,7 @@ class Presenter:
 
     def _show_job_details(self, parent):
         """Show detailed job information."""
-        tree = getattr(self.app, 'queue_tree', None)
+        tree = getattr(self.app, "queue_tree", None)
         if not tree:
             return
         selection = tree.selection()
@@ -899,7 +986,7 @@ class Presenter:
         detail_dialog.transient(parent)
         detail_dialog.grab_set()
 
-        ttk = __import__('tkinter.ttk', fromlist=['*'])
+        ttk = __import__("tkinter.ttk", fromlist=["*"])
 
         text = tk.Text(detail_dialog, wrap="word", padx=10, pady=10)
         text.pack(fill="both", expand=True, padx=10, pady=10)
@@ -938,13 +1025,15 @@ class Presenter:
         dialog.transient(self.root)
         dialog.grab_set()
 
-        ttk = __import__('tkinter.ttk', fromlist=['*'])
+        ttk = __import__("tkinter.ttk", fromlist=["*"])
 
         # Toolbar
         toolbar = ttk.Frame(dialog)
         toolbar.pack(fill="x", padx=10, pady=5)
 
-        ttk.Button(toolbar, text=_("timing_report_load", "Load Report…"), command=lambda: self._load_timing_report(text_area)).pack(side="left", padx=5)
+        ttk.Button(
+            toolbar, text=_("timing_report_load", "Load Report…"), command=lambda: self._load_timing_report(text_area)
+        ).pack(side="left", padx=5)
         ttk.Button(toolbar, text="Close", command=dialog.destroy).pack(side="right", padx=5)
 
         # Text area for report
@@ -961,14 +1050,16 @@ class Presenter:
 
     def _load_timing_report(self, text_area):
         """Load a timing report from a file."""
-        from tkinter import filedialog
         import json
+        from tkinter import filedialog
 
         file_path = filedialog.askopenfilename(
             title="Select Timing Report",
             filetypes=[("JSON files", "*.json"), ("All files", "*.*")],
-            initialdir=self.app.V.get("save_dir", tk.StringVar(value="")).get() if hasattr(self.app, 'V') and self.app.V.get("save_dir") else os.path.expanduser("~"),
-            parent=self.root
+            initialdir=self.app.V.get("save_dir", tk.StringVar(value="")).get()
+            if hasattr(self.app, "V") and self.app.V.get("save_dir")
+            else os.path.expanduser("~"),
+            parent=self.root,
         )
 
         if not file_path:
@@ -987,7 +1078,11 @@ class Presenter:
         import os
 
         # Try to find timing_report.json in the output folder
-        save_dir = self.app.V.get("save_dir", tk.StringVar(value="")).get() if hasattr(self.app, 'V') and self.app.V.get("save_dir") else ""
+        save_dir = (
+            self.app.V.get("save_dir", tk.StringVar(value="")).get()
+            if hasattr(self.app, "V") and self.app.V.get("save_dir")
+            else ""
+        )
         if save_dir:
             timing_path = os.path.join(save_dir, "timing_report.json")
             if os.path.exists(timing_path):
@@ -1000,7 +1095,13 @@ class Presenter:
                     pass
 
         # No timing report found
-        text_area.insert("1.0", _("timing_report_no_data", "No timing data available.\n\nEnable 'Save timing_report.json with export profiling data' in the Output tab to generate timing reports."))
+        text_area.insert(
+            "1.0",
+            _(
+                "timing_report_no_data",
+                "No timing data available.\n\nEnable 'Save timing_report.json with export profiling data' in the Output tab to generate timing reports.",
+            ),
+        )
         text_area.config(state="disabled")
 
     def _display_timing_report(self, text_area, data: dict):
@@ -1016,17 +1117,17 @@ class Presenter:
 
         # Total time
         total_ms = (
-            data.get("notion_api", {}).get("total_ms", 0) +
-            data.get("images", {}).get("total_ms", 0) +
-            data.get("pdf", {}).get("total_ms", 0) +
-            data.get("merge", {}).get("total_ms", 0) +
-            data.get("other", {}).get("total_ms", 0)
+            data.get("notion_api", {}).get("total_ms", 0)
+            + data.get("images", {}).get("total_ms", 0)
+            + data.get("pdf", {}).get("total_ms", 0)
+            + data.get("merge", {}).get("total_ms", 0)
+            + data.get("other", {}).get("total_ms", 0)
         )
         api_wait = data.get("api_wait_ms", 0)
 
-        lines.append(f"{_('timing_report_total', 'Total Time:')} {total_ms:.0f} ms ({total_ms/1000:.2f} s)")
+        lines.append(f"{_('timing_report_total', 'Total Time:')} {total_ms:.0f} ms ({total_ms / 1000:.2f} s)")
         if api_wait:
-            lines.append(f"API Rate-limiter Wait: {api_wait:.0f} ms ({api_wait/1000:.2f} s)")
+            lines.append(f"API Rate-limiter Wait: {api_wait:.0f} ms ({api_wait / 1000:.2f} s)")
         lines.append("")
 
         lines.append(f"{_('timing_report_categories', 'Categories:')}")
@@ -1077,12 +1178,14 @@ class Presenter:
         def worker():
             try:
                 from pageout.renderers.pdf import login_to_notion
+
                 login_to_notion(self.app.log)
             except Exception as e:
                 self.app.log("Login window error: " + str(e))
             self.app.q.put(("loginend",))
 
         import threading
+
         threading.Thread(target=worker, daemon=True).start()
 
     def load_properties(self):
@@ -1092,11 +1195,11 @@ class Presenter:
             return
 
         def work():
-            from pageout.sources.notion_api import load_property_names
-            from pageout.core.config import load_config
-
             # Create a client
             from notion_client import Client
+
+            from pageout.sources.notion_api import load_property_names
+
             client = Client(auth=c["token"])
             return load_property_names(client, c["database"], c["source_type"])
 
@@ -1108,6 +1211,7 @@ class Presenter:
             self.app.props_list.set_items(names)
             # Update sort and filter combos
             from pageout.core.config import SORT_BUILTIN
+
             self.app.sort_combo.config(values=SORT_BUILTIN + names)
             self.app.filter_combo.config(values=[""] + names + ["Title", "Date"])
             # Build hint string
@@ -1120,7 +1224,6 @@ class Presenter:
             self.app.hint.set(hint)
             self.app.append_log(f"Loaded {len(names)} properties.")
 
-        import threading
         self.root.bg(work, done)
 
     def load_pages(self):
@@ -1142,12 +1245,12 @@ class Presenter:
             labels = []
             for p in pages:
                 from pageout.sources.notion_api import page_fields
+
                 f = page_fields(p, i=0, n=2)  # Simplified
                 labels.append(f"{f.get('date', '—')}   {f.get('title', '')}")
             self.app.pages_list.set_items(labels)
             self.app.append_log(f"Loaded {len(pages)} pages. Deselect the ones you don't want.")
 
-        import threading
         self.root.bg(lambda: Exporter(c).fetch_roots(), done)
 
     def preview_names(self):
@@ -1185,7 +1288,6 @@ class Presenter:
                 "Files:\n" + "\n".join(names) + "\n\nImages:\n" + "\n".join(x + ".png" for x in img),
             )
 
-        import threading
         self.root.bg(work, done)
 
     def choose_folder(self):
@@ -1205,14 +1307,14 @@ class Presenter:
 
     def select_pages(self, all_: bool = False):
         """Select/deselect all pages."""
-        if hasattr(self.app, 'pages_list'):
+        if hasattr(self.app, "pages_list"):
             self.app.pages_list.select_all(all_)
 
     def on_close(self):
         """Handle window close event."""
         try:
             # Check if we should confirm exit
-            if self.prefs_confirm_exit.get() if hasattr(self, 'prefs_confirm_exit') else False:
+            if self.prefs_confirm_exit.get() if hasattr(self, "prefs_confirm_exit") else False:
                 if not messagebox.askyesno("Confirm Exit", "Are you sure you want to exit?"):
                     return  # Don't close
 
@@ -1270,6 +1372,7 @@ class Presenter:
         """Open the config folder in file explorer."""
         import subprocess
         import sys
+
         try:
             if sys.platform.startswith("win"):
                 os.startfile(CONFIG_DIR)
@@ -1312,7 +1415,7 @@ class Presenter:
         dialog.transient(self.root)
         dialog.grab_set()
 
-        ttk = __import__('tkinter.ttk', fromlist=['*'])
+        ttk = __import__("tkinter.ttk", fromlist=["*"])
         ttk.Label(dialog, text="Select a profile to load:").pack(pady=10)
 
         listbox = tk.Listbox(dialog)
@@ -1344,7 +1447,7 @@ class Presenter:
             merge_profile_into_config(profile_data, cfg)
 
             # Apply merged config to UI
-            _json = __import__('json')
+            _json = __import__("json")
             for key, val in cfg.items():
                 if key in self.app.V:
                     default = DEFAULTS.get(key)
@@ -1375,7 +1478,7 @@ class Presenter:
         dialog.transient(self.root)
         dialog.grab_set()
 
-        ttk = __import__('tkinter.ttk', fromlist=['*'])
+        ttk = __import__("tkinter.ttk", fromlist=["*"])
         ttk.Label(dialog, text="Saved Profiles:").pack(pady=10)
 
         listbox = tk.Listbox(dialog)
@@ -1452,7 +1555,7 @@ class Presenter:
         dialog.transient(self.root)
         dialog.grab_set()
 
-        ttk = __import__('tkinter.ttk', fromlist=['*'])
+        ttk = __import__("tkinter.ttk", fromlist=["*"])
         ttk.Label(dialog, text="Select a source to load:").pack(pady=10)
 
         # Create a listbox with source details
@@ -1501,7 +1604,7 @@ class Presenter:
         dialog.transient(self.root)
         dialog.grab_set()
 
-        ttk = __import__('tkinter.ttk', fromlist=['*'])
+        ttk = __import__("tkinter.ttk", fromlist=["*"])
         ttk.Label(dialog, text="Saved Sources:").pack(pady=10)
 
         # Create treeview for better display
@@ -1523,17 +1626,17 @@ class Presenter:
             sources = list_sources()
             for s in sources:
                 pin_mark = "📌" if s.get("pinned") else ""
-                tree.insert("", "end", values=(
-                    s.get("name", ""),
-                    s.get("source_type", "Auto-detect"),
-                    s.get("url", "")[:80],
-                    pin_mark
-                ))
+                tree.insert(
+                    "",
+                    "end",
+                    values=(s.get("name", ""), s.get("source_type", "Auto-detect"), s.get("url", "")[:80], pin_mark),
+                )
 
         refresh_tree()
 
         def on_add():
             from tkinter import simpledialog
+
             name = simpledialog.askstring("Add Source", "Enter source name:", parent=dialog)
             if not name:
                 return
@@ -1573,7 +1676,7 @@ class Presenter:
 
     def _refresh_source_dropdown(self):
         """Refresh the source dropdown on the Source page if it exists."""
-        if hasattr(self.app, 'source_combo'):
+        if hasattr(self.app, "source_combo"):
             sources = get_recent_sources(limit=20)
             source_names = [s["name"] for s in sources]
             self.app.source_combo.config(values=source_names)
@@ -1649,7 +1752,7 @@ class Presenter:
         # Store reference to track when dialog opens
         self._preferences_dialog = dialog
 
-        ttk = __import__('tkinter.ttk', fromlist=['*'])
+        ttk = __import__("tkinter.ttk", fromlist=["*"])
 
         # Track original values for reset functionality - capture at dialog open
         self._original_values = {}
@@ -1719,7 +1822,9 @@ class Presenter:
 
         theme_names = [(_("theme_light"), "light"), (_("theme_dark"), "dark"), (_("theme_system"), "system")]
         theme_var = tk.StringVar(value=self.app.theme.current_theme)
-        theme_combo = ttk.Combobox(theme_frame, textvariable=theme_var, values=[t[0] for t in theme_names], state="readonly", width=15)
+        theme_combo = ttk.Combobox(
+            theme_frame, textvariable=theme_var, values=[t[0] for t in theme_names], state="readonly", width=15
+        )
         theme_combo.grid(row=0, column=1, sticky="w", pady=2, padx=(10, 0))
         theme_combo.bind("<<ComboboxSelected>>", lambda e: self._apply_theme_selected(theme_var.get()))
 
@@ -1819,10 +1924,16 @@ class Presenter:
 
         self._section_modified["window_management"] = False
 
-        ttk.Checkbutton(window_frame, text=_("prefs_remember_window"), variable=self.app.V["prefs_remember_window"]).pack(anchor="w", pady=2)
-        ttk.Checkbutton(window_frame, text=_("prefs_confirm_exit"), variable=self.app.V["prefs_confirm_exit"]).pack(anchor="w", pady=2)
+        ttk.Checkbutton(
+            window_frame, text=_("prefs_remember_window"), variable=self.app.V["prefs_remember_window"]
+        ).pack(anchor="w", pady=2)
+        ttk.Checkbutton(window_frame, text=_("prefs_confirm_exit"), variable=self.app.V["prefs_confirm_exit"]).pack(
+            anchor="w", pady=2
+        )
 
-        ttk.Label(window_frame, text=_("window_management_help"), anchor="w", style="Hint.TLabel").pack(anchor="w", pady=(0, 2))
+        ttk.Label(window_frame, text=_("window_management_help"), anchor="w", style="Hint.TLabel").pack(
+            anchor="w", pady=(0, 2)
+        )
 
         # Section: Tooltip delay
         tooltip_frame = ttk.Frame(beh_tab)
@@ -1836,7 +1947,9 @@ class Presenter:
         delay_spin.pack(anchor="w", pady=2)
         delay_var.trace_add("write", lambda *_: self._mark_modified("tooltip_delay"))
 
-        ttk.Label(tooltip_frame, text=_("tooltip_delay_help"), anchor="w", style="Hint.TLabel").pack(anchor="w", pady=(0, 2))
+        ttk.Label(tooltip_frame, text=_("tooltip_delay_help"), anchor="w", style="Hint.TLabel").pack(
+            anchor="w", pady=(0, 2)
+        )
 
         # ============ SHORTCUTS TAB ============
         shortcuts_tab = ttk.Frame(notebook)
@@ -1859,8 +1972,12 @@ class Presenter:
 
         for i, (name, key, help_text) in enumerate(shortcuts_data):
             ttk.Label(main_shortcuts, text=f"{key}").grid(row=i, column=0, sticky="w", padx=10, pady=2)
-            ttk.Label(main_shortcuts, text=name, font=("", 9, "bold")).grid(row=i, column=1, sticky="w", padx=10, pady=2)
-            ttk.Label(main_shortcuts, text=help_text, style="Hint.TLabel").grid(row=i, column=2, sticky="w", padx=5, pady=2)
+            ttk.Label(main_shortcuts, text=name, font=("", 9, "bold")).grid(
+                row=i, column=1, sticky="w", padx=10, pady=2
+            )
+            ttk.Label(main_shortcuts, text=help_text, style="Hint.TLabel").grid(
+                row=i, column=2, sticky="w", padx=5, pady=2
+            )
 
         # ============ RESET & APPLY BUTTONS ============
         # Reset all sections tracked
@@ -1880,15 +1997,15 @@ class Presenter:
 
     def _update_modified_indicator(self):
         """Update modified indicator dots on section headers."""
-        if not hasattr(self, '_tabs'):
+        if not hasattr(self, "_tabs"):
             return
         for tab_name, tab_frame in self._tabs.items():
             # Find section headers in the tab
             for item in tab_frame.winfo_children():
-                if hasattr(item, '_section_key'):
+                if hasattr(item, "_section_key"):
                     is_modified = self._section_modified.get(item._section_key, False)
                     # In LabelFrame, we need to update the text
-                    if hasattr(item, '_section_label'):
+                    if hasattr(item, "_section_label"):
                         if is_modified:
                             item.config(text=" " + item._section_label + " ● ")
                         else:
@@ -1904,7 +2021,7 @@ class Presenter:
         query = self.search_var.get().strip().lower()
         if query:
             self._highlight_search_results(query)
-            count = len([s for s in self._all_settings if query in s['name'].lower() or query in s['tooltip'].lower()])
+            count = len([s for s in self._all_settings if query in s["name"].lower() or query in s["tooltip"].lower()])
             self.search_status.config(text=f"Found {count} setting(s)")
         else:
             self.search_status.config(text="")
@@ -1929,8 +2046,8 @@ class Presenter:
 
         if not self._search_query:
             # Show all settings by ensuring all frames are visible
-            for section in getattr(self, '_all_settings', []):
-                key = section.get('widget_key')
+            for section in getattr(self, "_all_settings", []):
+                key = section.get("widget_key")
                 if key and key in self.app.V:
                     # Reset any search highlighting
                     pass
@@ -1938,21 +2055,21 @@ class Presenter:
 
         # Find matching settings and scroll to first match
         matches = [
-            s for s in getattr(self, '_all_settings', [])
-            if self._search_query in s.get('name', '').lower() or
-               self._search_query in s.get('tooltip', '').lower()
+            s
+            for s in getattr(self, "_all_settings", [])
+            if self._search_query in s.get("name", "").lower() or self._search_query in s.get("tooltip", "").lower()
         ]
 
         if matches:
             # Focus on the first matching setting's widget
             first_match = matches[0]
-            widget_key = first_match.get('widget_key')
-            tab = first_match.get('tab')
+            widget_key = first_match.get("widget_key")
+            tab = first_match.get("tab")
 
-            if widget_key and hasattr(self.app, 'V'):
+            if widget_key and hasattr(self.app, "V"):
                 # The setting exists, ensure its tab is selected
                 if tab and tab in self._tabs:
-                    notebook = getattr(self, '_preferences_notebook', None)
+                    notebook = getattr(self, "_preferences_notebook", None)
                     if notebook:
                         notebook.select(self._tabs[tab])
 
@@ -1964,11 +2081,36 @@ class Presenter:
         self._all_settings = [
             {"name": _("theme_label"), "tab": "appearance", "tooltip": _("theme_help"), "widget_key": "theme"},
             {"name": _("ui_scale"), "tab": "appearance", "tooltip": _("ui_scale_help"), "widget_key": "ui_scale"},
-            {"name": _("accent_color"), "tab": "appearance", "tooltip": _("accent_color_help"), "widget_key": "accent_color"},
-            {"name": _("prefs_auto_save"), "tab": "behavior", "tooltip": _("prefs_auto_save_help"), "widget_key": "prefs_auto_save"},
-            {"name": _("prefs_remember_window"), "tab": "behavior", "tooltip": _("window_management_help"), "widget_key": "prefs_remember_window"},
-            {"name": _("prefs_confirm_exit"), "tab": "behavior", "tooltip": _("window_management_help"), "widget_key": "prefs_confirm_exit"},
-            {"name": _("prefs_tooltip_delay"), "tab": "behavior", "tooltip": _("tooltip_delay_help"), "widget_key": "prefs_tooltip_delay"},
+            {
+                "name": _("accent_color"),
+                "tab": "appearance",
+                "tooltip": _("accent_color_help"),
+                "widget_key": "accent_color",
+            },
+            {
+                "name": _("prefs_auto_save"),
+                "tab": "behavior",
+                "tooltip": _("prefs_auto_save_help"),
+                "widget_key": "prefs_auto_save",
+            },
+            {
+                "name": _("prefs_remember_window"),
+                "tab": "behavior",
+                "tooltip": _("window_management_help"),
+                "widget_key": "prefs_remember_window",
+            },
+            {
+                "name": _("prefs_confirm_exit"),
+                "tab": "behavior",
+                "tooltip": _("window_management_help"),
+                "widget_key": "prefs_confirm_exit",
+            },
+            {
+                "name": _("prefs_tooltip_delay"),
+                "tab": "behavior",
+                "tooltip": _("tooltip_delay_help"),
+                "widget_key": "prefs_tooltip_delay",
+            },
         ]
 
     def _apply_theme_selected(self, theme_display_name):
@@ -1988,6 +2130,7 @@ class Presenter:
         if not messagebox.askyesno(_("preferences_reset"), _("preferences_reset_confirm")):
             return
         import json
+
         for key, default in DEFAULTS.items():
             if key in self.app.V:
                 if isinstance(default, bool):
@@ -2009,6 +2152,7 @@ class Presenter:
         """Cancel preferences dialog, reverting all changes."""
         # Revert to original values
         import json
+
         for key, val in self._original_values.items():
             if key in self.app.V:
                 default = DEFAULTS.get(key, "")
@@ -2042,7 +2186,7 @@ class Presenter:
         dialog.transient(self.root)
         dialog.grab_set()
 
-        ttk = __import__('tkinter.ttk', fromlist=['*'])
+        ttk = __import__("tkinter.ttk", fromlist=["*"])
 
         shortcuts = [
             ("Export", "Ctrl+E", "Start export"),
@@ -2076,7 +2220,7 @@ class Presenter:
         icon_img = None
         try:
             # Use the app's already-loaded icon
-            if hasattr(self.app.root, '_icon_ref') and self.app.root._icon_ref:
+            if hasattr(self.app.root, "_icon_ref") and self.app.root._icon_ref:
                 icon_img = self.app.root._icon_ref
         except Exception:
             pass
@@ -2093,7 +2237,9 @@ class Presenter:
         content = ttk.Frame(dialog)
         content.pack(side="left", fill="both", expand=True, padx=(0, 15), pady=15)
 
-        ttk.Label(content, text=f"{APP_NAME}\n{APP_VERSION} ({APP_STAGE})", font=("", 12, "bold")).pack(anchor="w", pady=(0, 10))
+        ttk.Label(content, text=f"{APP_NAME}\n{APP_VERSION} ({APP_STAGE})", font=("", 12, "bold")).pack(
+            anchor="w", pady=(0, 10)
+        )
         ttk.Label(content, text=_("about_description"), font=("", 10)).pack(anchor="w", pady=(0, 8))
         ttk.Label(content, text=_("about_author"), font=("", 9), foreground="#6b7280").pack(anchor="w", pady=(0, 4))
         ttk.Label(content, text=_("about_license"), font=("", 9), foreground="#6b7280").pack(anchor="w", pady=(0, 4))
@@ -2142,8 +2288,7 @@ class Presenter:
             y = self.root.winfo_rooty() + self.root.winfo_height() // 2 - dialog.winfo_height() // 2
             dialog.geometry(f"+{max(20, x)}+{max(20, y)}")
         else:
-            messagebox.showinfo(_(
-                "first_run_complete"), "✅ " + _("first_run_complete"))
+            messagebox.showinfo(_("first_run_complete"), "✅ " + _("first_run_complete"))
 
     def _build_onboarding_content(self, dialog):
         """Build the onboarding dialog content using pack geometry."""
@@ -2153,16 +2298,24 @@ class Presenter:
 
         # Welcome frame
         self._welcome_frame = ttk.Frame(self._content_frame)
-        ttk.Label(self._welcome_frame, text=_("onboarding_welcome"), font=("", 14, "bold")).pack(anchor="w", pady=(0, 10))
-        ttk.Label(self._welcome_frame, text=_("onboarding_welcome_desc"), style="Hint.TLabel", wraplength=480).pack(anchor="w")
+        ttk.Label(self._welcome_frame, text=_("onboarding_welcome"), font=("", 14, "bold")).pack(
+            anchor="w", pady=(0, 10)
+        )
+        ttk.Label(self._welcome_frame, text=_("onboarding_welcome_desc"), style="Hint.TLabel", wraplength=480).pack(
+            anchor="w"
+        )
 
         # Step 1: Token
         self._token_frame = ttk.Frame(self._content_frame)
-        ttk.Label(self._token_frame, text=_("onboarding_token_label"), font=("", 11, "bold")).pack(anchor="w", pady=(0, 5))
+        ttk.Label(self._token_frame, text=_("onboarding_token_label"), font=("", 11, "bold")).pack(
+            anchor="w", pady=(0, 5)
+        )
         self.token_entry = ttk.Entry(self._token_frame, width=45)
         self.token_entry.pack(fill="x", pady=(0, 10))
         self.token_entry.insert(0, self.app.cfg0.get("token", ""))
-        ttk.Label(self._token_frame, text=_("onboarding_token_desc"), style="Hint.TLabel", wraplength=480).pack(anchor="w")
+        ttk.Label(self._token_frame, text=_("onboarding_token_desc"), style="Hint.TLabel", wraplength=480).pack(
+            anchor="w"
+        )
 
         # Step 2: Output folder
         self._folder_frame = ttk.Frame(self._content_frame)
@@ -2174,7 +2327,9 @@ class Presenter:
         self.folder_entry.pack(side="left", fill="x", expand=True, padx=(10, 0))
         browse_btn = ttk.Button(folder_row, text=_("onboarding_browse"), command=self._browse_output_folder)
         browse_btn.pack(side="left", padx=(4, 0))
-        ttk.Label(self._folder_frame, text=_("onboarding_output_folder_desc"), style="Hint.TLabel", wraplength=480).pack(anchor="w")
+        ttk.Label(
+            self._folder_frame, text=_("onboarding_output_folder_desc"), style="Hint.TLabel", wraplength=480
+        ).pack(anchor="w")
 
         # Hide all frames initially
         self._welcome_frame.pack_forget()
@@ -2324,9 +2479,9 @@ class Presenter:
                 detail = r.get("detail", "")
                 tags = [status.lower()]
 
-                item = tree.insert("", "end", text=r.get("name", "Check"),
-                                   values=(status, r.get("message", ""), detail),
-                                   tags=tags)
+                item = tree.insert(
+                    "", "end", text=r.get("name", "Check"), values=(status, r.get("message", ""), detail), tags=tags
+                )
 
                 # Expand detail for errors/warnings
                 if status in ("ERROR", "WARNING"):
@@ -2419,7 +2574,7 @@ class Presenter:
 
     def _save_window_geometry(self):
         """Save window geometry to file."""
-        if not self.prefs_remember_window.get() if hasattr(self, 'prefs_remember_window') else True:
+        if not self.prefs_remember_window.get() if hasattr(self, "prefs_remember_window") else True:
             return
         try:
             geom = {

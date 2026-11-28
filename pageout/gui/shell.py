@@ -9,15 +9,13 @@ This module provides the top-level UI shell including:
 - Theme selector integration
 """
 
-import os
-import sys
 import tkinter as tk
-from tkinter import messagebox, ttk
+from tkinter import ttk
 
 from pageout.core.config import DEFAULTS
-from pageout.gui.i18n import EN, _, set_language
-from pageout.gui.widgets import CheckList, FontPicker, SidebarNav, ThemeSelector, UIScaleSelector, ModeToggle
-from pageout.gui.theme import ThemeManager, HiDPISupport
+from pageout.gui.i18n import _
+from pageout.gui.theme import ThemeManager
+from pageout.gui.widgets import ModeToggle, SidebarNav, ThemeSelector, UIScaleSelector
 
 
 class ShellUI:
@@ -76,7 +74,9 @@ class ShellUI:
         file_menu.add_command(label=_("menu_export_settings"), command=self.presenter.export_settings)
         file_menu.add_command(label=_("menu_import_settings"), command=self.presenter.import_settings)
         file_menu.add_separator()
-        file_menu.add_command(label=_("menu_preferences"), accelerator="Ctrl+,", command=self.presenter.show_preferences)
+        file_menu.add_command(
+            label=_("menu_preferences"), accelerator="Ctrl+,", command=self.presenter.show_preferences
+        )
         file_menu.add_separator()
         file_menu.add_command(label=_("menu_exit"), accelerator="Alt+F4", command=self.presenter.on_close)
 
@@ -131,16 +131,16 @@ class ShellUI:
         title_frame.pack(fill="x", pady=(0, 12))
 
         try:
-            from pageout.core.paths import resource_path
             from PIL import Image, ImageTk
+
+            from pageout.core.paths import resource_path
+
             # Icons are in the assets/ subdirectory
             assets_dir = resource_path("").parent / "pageout" / "assets"
             for ext in (".png", ".ico"):
                 ip = assets_dir / ("icon" + ext)
                 if ip.exists():
-                    icon_img = ImageTk.PhotoImage(
-                        Image.open(str(ip)).convert("RGBA").resize((32, 32), Image.LANCZOS)
-                    )
+                    icon_img = ImageTk.PhotoImage(Image.open(str(ip)).convert("RGBA").resize((32, 32), Image.LANCZOS))
                     ttk.Label(title_frame, image=icon_img).pack(side="left", padx=(0, 8))
                     self._sidebar_icon = icon_img  # Keep reference
                     break
@@ -310,7 +310,7 @@ class ShellUI:
     def _update_theme_ui(self):
         """Update UI elements that depend on theme."""
         # Update log box background
-        if hasattr(self.app, 'log_box'):
+        if hasattr(self.app, "log_box"):
             if self.theme_manager.is_dark():
                 self.app.log_box.config(bg="#2d2d2d", fg="#f3f4f6", insertbackground="#f3f4f6")
             else:
@@ -333,10 +333,7 @@ class ShellUI:
         self.progress_bar.pack(side="left", padx=(0, 8))
 
         self.cancel_btn = ttk.Button(
-            self.progress_frame,
-            text=_("cancel"),
-            command=self.presenter.cancel_export,
-            state="disabled"
+            self.progress_frame, text=_("cancel"), command=self.presenter.cancel_export, state="disabled"
         )
         self.cancel_btn.pack(side="left")
 
@@ -350,7 +347,7 @@ class ShellUI:
 
     def set_running(self, running: bool):
         """Update UI for running state."""
-        if hasattr(self.app, 'export_btn'):
+        if hasattr(self.app, "export_btn"):
             self.app.export_btn.config(state="disabled" if running else "normal")
         self.cancel_btn.config(state="normal" if running else "disabled")
         self.set_status(_("status_exporting") if running else _("status_ready"))
@@ -382,7 +379,7 @@ class ShellUI:
 
     def _show_find_dialog(self):
         """Show find in log dialog."""
-        if not hasattr(self.app, 'log_box'):
+        if not hasattr(self.app, "log_box"):
             return
 
         dialog = tk.Toplevel(self.root)
@@ -430,8 +427,14 @@ class ShellUI:
     def _next_tab(self):
         """Switch to next tab."""
         pages = [
-            "1  Source", "2  Pages", "3  Formats", "4  Design",
-            "5  Images", "6  PDF", "7  LaTeX & AI", "8  Output"
+            "1  Source",
+            "2  Pages",
+            "3  Formats",
+            "4  Design",
+            "5  Images",
+            "6  PDF",
+            "7  LaTeX & AI",
+            "8  Output",
         ]
         if self.current_page in pages:
             idx = pages.index(self.current_page)
@@ -445,8 +448,14 @@ class ShellUI:
     def _prev_tab(self):
         """Switch to previous tab."""
         pages = [
-            "1  Source", "2  Pages", "3  Formats", "4  Design",
-            "5  Images", "6  PDF", "7  LaTeX & AI", "8  Output"
+            "1  Source",
+            "2  Pages",
+            "3  Formats",
+            "4  Design",
+            "5  Images",
+            "6  PDF",
+            "7  LaTeX & AI",
+            "8  Output",
         ]
         if self.current_page in pages:
             idx = pages.index(self.current_page)

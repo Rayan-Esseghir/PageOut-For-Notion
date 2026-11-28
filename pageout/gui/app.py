@@ -44,7 +44,6 @@ from pageout.core.config import (
     PAGENUM_FMT,
     PAGENUM_POS,
     PROP_LAYOUTS,
-    SAME_AS_BODY,
     SORT_BUILTIN,
     SOURCE_TYPES,
     STYLE_PRESETS,
@@ -58,14 +57,14 @@ from pageout.core.naming import build_name
 from pageout.core.paths import resource_path
 from pageout.core.pipeline import Exporter, export
 from pageout.core.secrets import keyring_available, redact
+from pageout.gui.i18n import _
+from pageout.gui.shell import create_shell
+from pageout.gui.theme import HiDPISupport, ThemeManager
+from pageout.gui.widgets import _GENERIC_FONT_ALIAS, CheckList, FontPicker, create_tool_tip
 from pageout.ocr.gemini import _GENAI_AVAILABLE
 from pageout.renderers.html import _HEX_RE
 from pageout.renderers.pdf import login_to_notion
 from pageout.sources.notion_api import load_property_names, page_fields
-from pageout.gui.i18n import EN, _
-from pageout.gui.widgets import ScrollFrame, CheckList, FontPicker, ToolTip, create_tool_tip, _GENERIC_FONT_ALIAS
-from pageout.gui.theme import ThemeManager, HiDPISupport
-from pageout.gui.shell import create_shell
 
 
 def _make_programmatic_icon():
@@ -100,6 +99,7 @@ def _windows_integration():
     if sys.platform.startswith("win"):
         try:
             import ctypes
+
             ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("PageOut.Exporter")
         except Exception:
             pass
@@ -177,6 +177,7 @@ class App:
             elif isinstance(default, list):
                 # For list defaults (like 'sources'), store as JSON string in StringVar
                 import json
+
                 if isinstance(val, list):
                     self.V[key] = tk.StringVar(value=json.dumps(val))
                 else:
@@ -185,7 +186,9 @@ class App:
                 self.V[key] = tk.StringVar(value=str(val))
 
         # Initialize font preferences tracking
-        self._font_favorites = self._load_json_preference("font_favorites", ["Inter", "Roboto", "Segoe UI", "Arial", "Source Sans 3"])
+        self._font_favorites = self._load_json_preference(
+            "font_favorites", ["Inter", "Roboto", "Segoe UI", "Arial", "Source Sans 3"]
+        )
         self._font_recent = self._load_json_preference("font_recent", [])
 
         # Initialize font and installed fonts
@@ -257,6 +260,7 @@ class App:
     # ---- helpers ----
     def collect(self):
         import json
+
         c = {k: v.get() for k, v in self.V.items()}
         c["custom_css"] = self.css_text.get("1.0", "end").strip()
         c["token"] = c["token"].strip()
@@ -676,7 +680,7 @@ class App:
                 allow_same,
                 lambda n: self._on_font_selected(key, n),
                 favorites=self._font_favorites,
-                recent=self._font_recent
+                recent=self._font_recent,
             )
 
         ttk.Button(fr, text="Choose font...", command=choose).pack(side="left", padx=(6, 0))
@@ -742,9 +746,10 @@ class App:
         self.source_combo.bind("<<ComboboxSelected>>", on_select)
 
         # Add a button to open the manage dialog
-        from pageout.gui.presenter import Presenter
         # We'll need a reference to the presenter - use a lambda that calls a method on the presenter
-        ttk.Button(combo_frame, text="Manage...", command=lambda: self.presenter.manage_sources() if self.presenter else None).pack(side="left", padx=4)
+        ttk.Button(
+            combo_frame, text="Manage...", command=lambda: self.presenter.manage_sources() if self.presenter else None
+        ).pack(side="left", padx=4)
 
         return combo_frame
 
@@ -780,6 +785,7 @@ class App:
 
         # Create the shell (sidebar, menu bar, status bar, etc.)
         from pageout.gui.presenter import Presenter
+
         self.presenter = Presenter(self.root, self)
         self.shell = create_shell(self.root, self, self.presenter)
 
@@ -856,9 +862,7 @@ class App:
             variable=self.show_token,
             command=lambda: self.token_entry.config(show="" if self.show_token.get() else "•"),
         ).pack(side="left")
-        ttk.Checkbutton(o, text=_("remember_token"), variable=V["remember_token"]).pack(
-            side="left", padx=14
-        )
+        ttk.Checkbutton(o, text=_("remember_token"), variable=V["remember_token"]).pack(side="left", padx=14)
         ttk.Button(
             o, text=_("open_integrations"), command=lambda: webbrowser.open("https://www.notion.so/my-integrations")
         ).pack(side="left")
@@ -1071,7 +1075,9 @@ class App:
         self.field(g, _("show_these"), self.props_list, "Untick the properties you do not want in the export.")
         pb = ttk.Frame(g)
         ttk.Button(pb, text=_("tick_all"), command=lambda: self.props_list.select_all(True)).pack(side="left")
-        ttk.Button(pb, text=_("untick_all"), command=lambda: self.props_list.select_all(False)).pack(side="left", padx=6)
+        ttk.Button(pb, text=_("untick_all"), command=lambda: self.props_list.select_all(False)).pack(
+            side="left", padx=6
+        )
         ttk.Label(pb, textvariable=self.props_list.info, style="Hint.TLabel").pack(side="left", padx=8)
         self.field(g, "", pb)
 

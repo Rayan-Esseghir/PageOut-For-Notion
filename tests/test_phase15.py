@@ -1,30 +1,25 @@
 """Tests for Phase 15: More formats (EPUB, RST, AsciiDoc)."""
 
-import json
-import os
-import tempfile
-from pathlib import Path
-
 import pytest
 from fake_notion import DB_ID, FakeNotion
 
-from pageout.core.config import DEFAULTS, FORMATS, FM_PRESETS, MD_PRESETS
+from pageout.core.config import DEFAULTS, FM_PRESETS, FORMATS, MD_PRESETS
 from pageout.core.ir import Span
 from pageout.core.pipeline import export
 from pageout.renderers.asciidoc import (
-    build_asciidoc,
     blocks_asciidoc,
-    rt_adoc,
+    build_asciidoc,
     escape_asciidoc,
+    rt_adoc,
 )
-from pageout.renderers.rst import (
-    build_rst,
-    blocks_rst,
-    rt_rst,
-    escape_rst,
-)
-from pageout.renderers.markdown import md_front_matter
 from pageout.renderers.base import R
+from pageout.renderers.markdown import md_front_matter
+from pageout.renderers.rst import (
+    blocks_rst,
+    build_rst,
+    escape_rst,
+    rt_rst,
+)
 
 
 def cfg_for(out, **over):
@@ -51,6 +46,7 @@ def isolated(tmp_path, monkeypatch):
     monkeypatch.setattr("pageout.core.config.CONFIG_FILE", str(tmp_path / "cfg" / "config.json"))
     monkeypatch.delattr("pageout.core.config", "SOURCE_DIR", raising=False)
     import pageout.core.sources as sources
+
     monkeypatch.setattr(sources, "SOURCE_DIR", str(tmp_path / "cfg" / "sources"))
     monkeypatch.delenv("NOTION_TOKEN", raising=False)
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
@@ -66,11 +62,19 @@ def mock_r():
 # Helper to create RichText (list of Span objects)
 def spans(*items):
     """Create a list of Span objects for testing."""
-    return [Span(text=item.get("text", ""), bold=item.get("bold", False),
-                 italic=item.get("italic", False), strike=item.get("strike", False),
-                 underline=item.get("underline", False), code=item.get("code", False),
-                 equation=item.get("equation", None), href=item.get("href", None))
-            for item in items]
+    return [
+        Span(
+            text=item.get("text", ""),
+            bold=item.get("bold", False),
+            italic=item.get("italic", False),
+            strike=item.get("strike", False),
+            underline=item.get("underline", False),
+            code=item.get("code", False),
+            equation=item.get("equation", None),
+            href=item.get("href", None),
+        )
+        for item in items
+    ]
 
 
 # ---------------------------------------------------------------------- Test format registration in config
@@ -119,7 +123,6 @@ def test_escape_rst_empty():
 
 def test_rt_rst_basic(mock_r):
     """Basic RST rich text rendering."""
-    from pageout.core.ir import Block
 
     rts = spans({"text": "Hello", "bold": True}, {"text": " World", "italic": True})
     result = rt_rst(rts, mock_r)

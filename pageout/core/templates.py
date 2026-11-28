@@ -8,8 +8,6 @@ to prevent injection attacks.
 from __future__ import annotations
 
 import html
-import json
-import os
 import re
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -21,11 +19,12 @@ TEMPLATES_DIR = Path(__file__).resolve().parent.parent.parent / "templates"
 PLUGIN_TEMPLATES_DIR = Path.home() / ".pageout" / "templates"
 
 # Sandboxed variable pattern: {{ var }} or {{ var.key }}
-VAR_PATTERN = re.compile(r'\{\{\s*([a-zA-Z_][a-zA-Z0-9_\.]*)\s*\}\}')
+VAR_PATTERN = re.compile(r"\{\{\s*([a-zA-Z_][a-zA-Z0-9_\.]*)\s*\}\}")
 
 
 class TemplateError(Exception):
     """Raised when template loading or rendering fails."""
+
     pass
 
 
@@ -56,13 +55,13 @@ class Template:
     def _sanitize_key(self, key: str) -> str:
         """Validate and sanitize a variable key (e.g., 'title' or 'doc.title')."""
         # Only allow alphanumeric and underscore
-        if not re.match(r'^[a-zA-Z_][a-zA-Z0-9_\.]*$', key):
+        if not re.match(r"^[a-zA-Z_][a-zA-Z0-9_\.]*$", key):
             raise TemplateError(f"Invalid variable name: {key}")
         return key
 
     def _resolve_value(self, key: str, context: Dict[str, Any]) -> Any:
         """Resolve a potentially nested key (e.g., 'doc.title') from context."""
-        parts = key.split('.')
+        parts = key.split(".")
         value = context
         for part in parts:
             if isinstance(value, dict):
@@ -85,7 +84,7 @@ class Template:
         if self.template_type == "html":
             # HTML escape everything, but allow certain safe keys
             # Check if this is a CSS, content, or URL context
-            if key in ('css', 'head_extra', 'content', 'body_classes'):
+            if key in ("css", "head_extra", "content", "body_classes"):
                 # CSS, head_extra, content, and body_classes should NOT be escaped
                 # as they contain HTML/CSS/markup
                 return str_value
@@ -93,10 +92,10 @@ class Template:
         else:
             # Markdown: escape pipe characters and backticks for table safety
             # But content and frontmatter should NOT be escaped (they contain markup)
-            if key in ('content', 'frontmatter'):
-                str_value = str_value.replace('\n', ' ')
+            if key in ("content", "frontmatter"):
+                str_value = str_value.replace("\n", " ")
                 return str_value
-            str_value = str_value.replace('|', '\\|').replace('\n', ' ')
+            str_value = str_value.replace("|", "\\|").replace("\n", " ")
             return str_value
 
     def render(self, context: Dict[str, Any]) -> str:
@@ -131,7 +130,7 @@ class Template:
         """Return variables that are required but not in context."""
         present = set()
         for key in self.variables:
-            if key.split('.')[0] in context:
+            if key.split(".")[0] in context:
                 try:
                     self._resolve_value(key, context)
                     present.add(key)
@@ -206,7 +205,7 @@ def load_template_safely(name: str, template_type: str = "html", allow_custom: b
 def get_builtin_templates() -> Dict[str, Template]:
     """Return all built-in templates."""
     templates = {}
-    for ext in ('.html', '.md'):
+    for ext in (".html", ".md"):
         for path in TEMPLATES_DIR.glob(f"*{ext}"):
             name = path.stem
             template_type = "html" if ext == ".html" else "md"

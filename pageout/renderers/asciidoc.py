@@ -1,11 +1,7 @@
 """AsciiDoc renderer (reads IR only)."""
 
-import html
-from typing import Optional
-
 from pageout.core.ir import LIST_KINDS, Asset, plain_text
 from pageout.renderers.base import R
-from pageout.renderers.markdown import rt_md
 
 
 def escape_asciidoc(s: str) -> str:
@@ -134,7 +130,7 @@ def blocks_asciidoc(blocks, r, depth=0):
             after = []
         elif t == "code":
             lang = b.language or "asciidoc"
-            block = [pad + f"----", pad + f"[{lang}]"]
+            block = [pad + "----", pad + f"[{lang}]"]
             block.extend([pad + ln for ln in plain_text(b.text).split("\n")])
             block.append(pad + "----")
         elif t == "divider":
@@ -149,6 +145,7 @@ def blocks_asciidoc(blocks, r, depth=0):
                 n = r.cfg.get("img_handling", "Embed in file")
                 if n == "Embed in file" and img.bytes:
                     from pageout.core.assets import data_uri
+
                     block = [pad + f"image::{data_uri(img)}[link]"]
                 else:
                     block = [pad + f"image::{r.img_src(img)}[link]"]
@@ -164,7 +161,7 @@ def blocks_asciidoc(blocks, r, depth=0):
         elif t == "toggle":
             # Use collapsible section for toggles
             if r.expand:
-                lines.append(pad + f"[%collapsible]")
+                lines.append(pad + "[%collapsible]")
                 lines.append(pad + f".{text}")
                 lines.append(pad + "====>")
                 if kids:
@@ -228,7 +225,7 @@ def wrap_asciidoc(title: str, content: str, cfg: dict, frontmatter: str = "") ->
     use_template = cfg.get("use_template", True)
     if use_template:
         try:
-            from pageout.core.templates import TemplateError, template_exists, load_template
+            from pageout.core.templates import TemplateError, load_template, template_exists
 
             if template_exists(template_name, "adoc"):
                 tmpl = load_template(template_name, "adoc")

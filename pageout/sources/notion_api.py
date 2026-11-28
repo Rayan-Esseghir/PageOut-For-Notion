@@ -103,6 +103,7 @@ def normalize_source_ids(source):
         # Try to parse as JSON first
         try:
             import json
+
             parsed = json.loads(text)
             if isinstance(parsed, list):
                 items = parsed
@@ -116,6 +117,7 @@ def normalize_source_ids(source):
                 try:
                     # Use ast.literal_eval for safer parsing
                     import ast
+
                     parsed = ast.literal_eval(text)
                     if isinstance(parsed, (list, tuple)):
                         items = list(parsed)
@@ -139,7 +141,7 @@ def normalize_source_ids(source):
             continue
         # Try to parse as URL/ID
         parsed_id = parse_database_id(item_str)
-        if parsed_id and len(parsed_id) == 32 and all(c in '0123456789abcdefABCDEF' for c in parsed_id):
+        if parsed_id and len(parsed_id) == 32 and all(c in "0123456789abcdefABCDEF" for c in parsed_id):
             ids.append(parsed_id.lower())
 
     # Dedupe while preserving order

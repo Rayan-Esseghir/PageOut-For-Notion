@@ -1,7 +1,6 @@
 """Markdown renderer (reads IR only)."""
 
 import json
-from typing import Optional
 
 from pageout.core.ir import LIST_KINDS, Asset, plain_text
 
@@ -178,7 +177,7 @@ def wrap_markdown(title, content, cfg, frontmatter="", use_template=True):
 
     if use_template:
         try:
-            from pageout.core.templates import TemplateError, template_exists, load_template
+            from pageout.core.templates import TemplateError, load_template, template_exists
 
             if template_exists(template_name, "md"):
                 tmpl = load_template(template_name, "md")

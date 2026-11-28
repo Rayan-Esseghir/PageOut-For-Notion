@@ -121,13 +121,15 @@ pageout export <url> -f md --force   # exports everything again
 Add your own Python code to filter pages or transform content:
 
 ```python
-def filter_page(page):                 # False → skip this page
+def filter_page(page):  # False → skip this page
     return page.title != "Draft"
 
-def transform_node(block, doc):        # modify or drop blocks
+
+def transform_node(block, doc):  # modify or drop blocks
     return block
 
-def transform_frontmatter(fm, doc):    # customize Markdown front matter
+
+def transform_frontmatter(fm, doc):  # customize Markdown front matter
     fm["author"] = "Your Name"
     return fm
 ```

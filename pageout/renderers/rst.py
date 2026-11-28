@@ -1,11 +1,7 @@
 """reStructuredText renderer (reads IR only)."""
 
-import html
-from typing import Optional
-
 from pageout.core.ir import LIST_KINDS, Asset, plain_text
 from pageout.renderers.base import R
-from pageout.renderers.markdown import blocks_md, rt_md, wrap_markdown
 
 
 def escape_rst(s: str) -> str:
@@ -134,6 +130,7 @@ def blocks_rst(blocks, r, depth=0):
                 if n == "Embed in file" and img.bytes:
                     # Use inline image with data URI (won't work in all readers)
                     from pageout.core.assets import data_uri
+
                     block = [pad + f".. image:: {data_uri(img)}", ""]
                 else:
                     # Use external link or local path
@@ -160,7 +157,12 @@ def blocks_rst(blocks, r, depth=0):
             if rows:
                 width = max(len(x) for x in rows)
                 rows = [x + [""] * (width - len(x)) for x in rows]
-                block = [pad + ".. list-table::", pad + "   :widths: " + " ".join(["20"] * width), pad + "   :header-rows: 1", ""]
+                block = [
+                    pad + ".. list-table::",
+                    pad + "   :widths: " + " ".join(["20"] * width),
+                    pad + "   :header-rows: 1",
+                    "",
+                ]
                 for row in rows:
                     block.append(pad + "   * - " + " - ".join(row))
             after = []
@@ -181,7 +183,7 @@ def blocks_rst(blocks, r, depth=0):
                 block = [pad + b.title]
             after = []
         elif t == "child_database":
-            block = [pad + f".. container:: database", ""]
+            block = [pad + ".. container:: database", ""]
             block.extend([pad + "   " + b.title + " (database)"])
         elif t == "link_to_page":
             pl = r.page_link(b.target_id)
@@ -208,7 +210,7 @@ def wrap_rst(title: str, content: str, cfg: dict, frontmatter: str = "") -> str:
     use_template = cfg.get("use_template", True)
     if use_template:
         try:
-            from pageout.core.templates import TemplateError, template_exists, load_template
+            from pageout.core.templates import TemplateError, load_template, template_exists
 
             if template_exists(template_name, "rst"):
                 tmpl = load_template(template_name, "rst")

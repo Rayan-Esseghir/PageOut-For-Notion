@@ -12,8 +12,8 @@ from typing import Optional, Tuple
 
 try:
     import tkinter as tk
-    from tkinter import ttk
     import tkinter.font as tkfont
+    from tkinter import ttk
 except ImportError:
     tk = None
     ttk = None
@@ -116,11 +116,12 @@ class ThemeManager:
         if sys.platform != "win32":
             return False
         try:
-            import ctypes
             import winreg
 
             # Check Windows registry for app theme
-            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize") as key:
+            with winreg.OpenKey(
+                winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"
+            ) as key:
                 value, _ = winreg.QueryValueEx(key, "AppsUseLightTheme")
                 return value == 0
         except Exception:
@@ -162,16 +163,20 @@ class ThemeManager:
 
         # Ensure checkbutton and radiobutton indicator colors work in dark mode
         # Use style mapping for proper dark mode appearance
-        self.style.map("TCheckbutton",
-                       background=[("active", bg)],
-                       foreground=[("active", fg)],
-                       indicatorbackground=[("selected", "#60a5fa"), ("!selected", bg)],
-                       indicatorforeground=[("selected", "#1f2937"), ("!selected", fg)])
-        self.style.map("TRadiobutton",
-                       background=[("active", bg)],
-                       foreground=[("active", fg)],
-                       indicatorbackground=[("selected", "#60a5fa"), ("!selected", bg)],
-                       indicatorforeground=[("selected", fg), ("!selected", fg)])
+        self.style.map(
+            "TCheckbutton",
+            background=[("active", bg)],
+            foreground=[("active", fg)],
+            indicatorbackground=[("selected", "#60a5fa"), ("!selected", bg)],
+            indicatorforeground=[("selected", "#1f2937"), ("!selected", fg)],
+        )
+        self.style.map(
+            "TRadiobutton",
+            background=[("active", bg)],
+            foreground=[("active", fg)],
+            indicatorbackground=[("selected", "#60a5fa"), ("!selected", bg)],
+            indicatorforeground=[("selected", fg), ("!selected", fg)],
+        )
 
         # Update root background
         self.root.configure(background=bg)
@@ -199,7 +204,11 @@ class ThemeManager:
             base_size = int(10 * self.ui_scale)
             heading_size = int(15 * self.ui_scale)
             base_font = ("Segoe UI", base_size) if sys.platform.startswith("win") else ("Helvetica", base_size)
-            heading_font = ("Segoe UI", heading_size, "bold") if sys.platform.startswith("win") else ("Helvetica", heading_size, "bold")
+            heading_font = (
+                ("Segoe UI", heading_size, "bold")
+                if sys.platform.startswith("win")
+                else ("Helvetica", heading_size, "bold")
+            )
             self.style.configure(".", font=base_font)
             self.style.configure("Head.TLabel", font=heading_font)
             self.style.configure("Hint.TLabel", font=("", int(9 * self.ui_scale)))

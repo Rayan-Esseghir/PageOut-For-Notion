@@ -501,7 +501,7 @@ def wrap_html(title, body, cfg, use_template=True):
     # Try to use custom template if configured
     if use_template:
         try:
-            from pageout.core.templates import TemplateError, template_exists, load_template
+            from pageout.core.templates import TemplateError, load_template, template_exists
 
             template_name = cfg.get("template", "page")
             if template_exists(template_name, "html"):

@@ -178,11 +178,11 @@ def _running_header_templates(cfg: dict):
     # Running header with page title
     header_content = (
         '<div style="width:100%;text-align:center;'
-        'font-size:9px;color:#666;vertical-align:middle;'
+        "font-size:9px;color:#666;vertical-align:middle;"
         'height:15mm;display:flex;align-items:center;justify-content:center;">'
         '<span id="page-title" style="max-width:90vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'
-        + f'{formatted_header}'
-        + '</span></div>'
+        + f"{formatted_header}"
+        + "</span></div>"
     )
 
     # Footer position
@@ -222,7 +222,7 @@ TOC_JS = """() => {
 }"""
 
 
-WATERMARK_CSS = '''
+WATERMARK_CSS = """
 body::before {{
   content: "@@@WATERMARK@@@";
   position: fixed;
@@ -237,7 +237,7 @@ body::before {{
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
   font-weight: 400;
 }}
-'''
+"""
 
 
 PAGE_TITLE_JS = """() => {
@@ -266,7 +266,7 @@ def pdf_kwargs(cfg, path):
 
     # Handle booklet mode (A5)
     format_size = cfg["page_size"]
-    landscape = (cfg["orientation"] == "Landscape")
+    landscape = cfg["orientation"] == "Landscape"
     if cfg.get("booklet_mode", False):
         # Booklet mode uses A5 size regardless of selected size
         format_size = "A5"
@@ -389,7 +389,7 @@ def render_notion_page(page, pid, path, cfg, all_props, hide_names):
         wm_text = cfg.get("watermark_text", "").strip()
         wm_opacity = cfg.get("watermark_opacity", 0.15)
         # Escape any special CSS characters in watermark text
-        wm_text_escaped = wm_text.replace('\\', '\\\\').replace('"', '\\"')
+        wm_text_escaped = wm_text.replace("\\", "\\\\").replace('"', '\\"')
         watermark_css = WATERMARK_CSS.replace("@@@WATERMARK@@@", wm_text_escaped)
         watermark_css = watermark_css.replace("@@@OPACITY@@@", str(wm_opacity))
         css_parts.append(watermark_css)

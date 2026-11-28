@@ -9,37 +9,37 @@ Tests for:
 """
 
 import os
-import json
+from unittest.mock import patch
+
 import pytest
-from pathlib import Path
-from unittest.mock import patch, MagicMock
 
 # Import modules to test
-from pageout.core.config import DEFAULTS, SYNC_TARGETS, CONFIG_VERSION
+from pageout.core.config import DEFAULTS
 from pageout.core.safety import (
-    check_overwrite,
-    check_large_export,
-    check_cloud_folder,
-    check_long_path,
+    HIGH_CONTRAST_COLORS,
     ExportSession,
-    save_session,
-    load_session,
+    apply_high_contrast,
+    check_cloud_folder,
+    check_large_export,
+    check_long_path,
+    check_overwrite,
     clear_session,
     has_interrupted_session,
+    load_session,
     recover_session_prompt,
-    apply_high_contrast,
+    save_session,
     setup_keyboard_navigation,
-    HIGH_CONTRAST_COLORS,
 )
-
 
 # ---------------------------------------------------------------------------
 # Safety checks tests
 # ---------------------------------------------------------------------------
 
+
 def test_check_overwrite_no_existing_files():
     """Overwrite check should pass when no existing files."""
     import shutil
+
     output_dir = "tests/tmp_output"
     # Clean up before test to ensure isolation
     if os.path.exists(output_dir):
@@ -156,6 +156,7 @@ def test_check_long_path_within_threshold():
 # Session recovery tests
 # ---------------------------------------------------------------------------
 
+
 def test_save_load_session():
     """Session save/load should work correctly."""
     session = ExportSession(
@@ -168,7 +169,7 @@ def test_save_load_session():
         pages_done=50,
         pages_failed=["page1"],
         status="running",
-        config_snapshot={"key": "value"}
+        config_snapshot={"key": "value"},
     )
 
     # Save session
@@ -186,7 +187,7 @@ def test_save_load_session():
 
 def test_clear_session():
     """Clear session should remove files."""
-    from pageout.core.safety import SESSION_DIR, SESSION_FILE, SESSION_BACKUP
+    from pageout.core.safety import SESSION_BACKUP, SESSION_DIR, SESSION_FILE
 
     # Create test session files
     os.makedirs(SESSION_DIR, exist_ok=True)
@@ -196,7 +197,7 @@ def test_clear_session():
         source="C:/test/source",
         output_dir="C:/test/output",
         formats=["pdf"],
-        pages_total=10
+        pages_total=10,
     )
     save_session(session)
 
@@ -220,7 +221,7 @@ def test_has_interrupted_session():
         formats=["pdf"],
         pages_total=10,
         pages_done=5,
-        status="running"
+        status="running",
     )
     save_session(session)
 
@@ -235,7 +236,7 @@ def test_has_interrupted_session():
         formats=["pdf"],
         pages_total=10,
         pages_done=10,
-        status="completed"
+        status="completed",
     )
     save_session(session2)
 
@@ -252,7 +253,7 @@ def test_recover_session_prompt():
         formats=["pdf"],
         pages_total=10,
         pages_done=5,
-        status="interrupted"
+        status="interrupted",
     )
     save_session(session)
 
@@ -265,9 +266,11 @@ def test_recover_session_prompt():
 # Accessibility & UI tests
 # ---------------------------------------------------------------------------
 
+
 def test_rtl_language_detection():
     """RTL language detection should work correctly."""
     from pageout.core.safety import is_rtl_language
+
     assert is_rtl_language("ar") is True
     assert is_rtl_language("he") is True
     assert is_rtl_language("en") is False
@@ -317,10 +320,9 @@ def test_setup_keyboard_navigation():
 # i18n & Confirmation tests (U7 features)
 # ---------------------------------------------------------------------------
 
+
 def test_confirmation_dialogs():
     """Test confirmation dialogs for critical operations."""
-    import tkinter as tk
-    from tkinter import messagebox
 
     # Mock messagebox
     with patch("tkinter.messagebox.askyesno") as mock_askyesno:
@@ -350,7 +352,7 @@ def test_confirmation_dialogs():
 
 def test_arabic_ui_strings():
     """Test that Arabic UI strings exist in translation."""
-    from pageout.gui.i18n import EN, AR
+    from pageout.gui.i18n import AR, EN
 
     # Check that basic strings exist
     assert "title_prefix" in EN
@@ -361,7 +363,7 @@ def test_arabic_ui_strings():
 
 def test_i18n_rtl_language_switching():
     """Test i18n language switching and RTL detection."""
-    from pageout.gui.i18n import set_language, get_current_language, is_rtl, get_string
+    from pageout.gui.i18n import get_current_language, get_string, is_rtl, set_language
 
     # Default language
     set_language("en")
@@ -401,6 +403,7 @@ def test_prefs_confirm_exit():
 # Final build verification
 # ---------------------------------------------------------------------------
 
+
 def test_dist_executable_exists():
     """Verify dist files exist after build - skip if not built yet."""
     dist_dir = "dist"
@@ -415,7 +418,6 @@ def test_dist_executable_exists():
 
 def test_help_exits_zero():
     """PageOut --help should exit with code 0 (via CLI entry point)."""
-    import subprocess
     import sys
 
     # The exe is a GUI app, so test the CLI entry point instead
@@ -425,8 +427,9 @@ def test_help_exits_zero():
         pytest.skip("Executable not built yet - run PyInstaller build first")
 
     # Test CLI via Python module
-    from pageout.cli import main
     import io
+
+    from pageout.cli import main
 
     # Capture stdout
     old_stdout = sys.stdout

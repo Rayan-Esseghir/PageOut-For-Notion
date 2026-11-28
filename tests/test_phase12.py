@@ -1,23 +1,19 @@
 """Tests for Phase 12: Scheduling and scheduled exports."""
 
-import json
-import os
 import pytest
-from datetime import datetime
 
-from pageout.core.config import DEFAULTS, CONFIG_DIR
 from pageout.core.scheduler import (
-    add_schedule,
-    remove_schedule,
-    update_schedule,
-    list_schedules,
-    get_schedule,
-    schedule_exists,
-    enable_schedule,
-    disable_schedule,
-    get_scheduled_tasks,
     ScheduledTask,
     ScheduleStatus,
+    add_schedule,
+    disable_schedule,
+    enable_schedule,
+    get_schedule,
+    get_scheduled_tasks,
+    list_schedules,
+    remove_schedule,
+    schedule_exists,
+    update_schedule,
 )
 
 
@@ -25,8 +21,8 @@ from pageout.core.scheduler import (
 def isolated(tmp_path, monkeypatch):
     """Isolated test environment with temp config directory."""
     import pageout.core.config as config_module
-    import pageout.core.sources as sources_module
     import pageout.core.scheduler as scheduler_module
+    import pageout.core.sources as sources_module
 
     cfg_dir = str(tmp_path / "cfg")
     monkeypatch.setattr(config_module, "CONFIG_DIR", cfg_dir)
@@ -265,7 +261,7 @@ def test_get_scheduled_tasks(isolated):
 # ---------------------------------------------------------------------- Test Schedule persistence
 def test_schedule_persistence(isolated):
     """Schedules should persist across loads."""
-    from pageout.core.scheduler import load_schedules, save_schedules
+    from pageout.core.scheduler import load_schedules
 
     add_schedule("persist-test", "db1", "/out", ["md"], "daily")
 

@@ -6,24 +6,24 @@ import pytest
 from fake_notion import DB_ID, FakeNotion
 
 from pageout.cli import main as cli_main
-from pageout.core.config import DEFAULTS, SOURCE_TYPES, DB_EXPORT_MODES
+from pageout.core.config import DEFAULTS, SOURCE_TYPES
+from pageout.core.pipeline import export
 from pageout.core.sources import (
     add_source,
-    get_source,
-    list_sources,
+    build_source_from_url,
     delete_source,
+    extract_all_ids,
     extract_id_from_url,
     extract_workspace_id,
-    extract_all_ids,
-    build_source_from_url,
     get_recent_sources,
-    search_sources_by_workspace,
-    update_source,
+    get_source,
     get_sources_with_filter,
+    list_sources,
+    search_sources_by_workspace,
     source_exists,
     toggle_pin,
+    update_source,
 )
-from pageout.core.pipeline import export
 
 
 def cfg_for(out, **over):
@@ -48,8 +48,9 @@ def run(out, notion=None, **over):
 def isolated(tmp_path, monkeypatch):
     monkeypatch.setattr("pageout.core.config.CONFIG_DIR", str(tmp_path / "cfg"))
     monkeypatch.setattr("pageout.core.config.CONFIG_FILE", str(tmp_path / "cfg" / "config.json"))
-    monkeypatch.delattr("pageout.core.config", "SOURCE_DIR",raising=False)
+    monkeypatch.delattr("pageout.core.config", "SOURCE_DIR", raising=False)
     import pageout.core.sources as sources
+
     monkeypatch.setattr(sources, "SOURCE_DIR", str(tmp_path / "cfg" / "sources"))
     monkeypatch.delenv("NOTION_TOKEN", raising=False)
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
@@ -204,6 +205,7 @@ def test_get_source_backward_compatibility(isolated):
     """Missing fields should get defaults for backward compatibility."""
     # Create a minimal source file directly
     import os
+
     from pageout.core.sources import SOURCE_DIR, ensure_source_dir
 
     ensure_source_dir()
@@ -262,6 +264,7 @@ def test_list_sources_sorted_by_name(isolated):
 def test_list_sources_includes_defaults_for_old_sources(isolated):
     """Old sources without new fields should have defaults applied."""
     import os
+
     from pageout.core.sources import SOURCE_DIR, ensure_source_dir
 
     ensure_source_dir()
@@ -341,13 +344,19 @@ def test_cli_uses_source_filter_sort_settings(isolated, tmp_path):
     )
 
     out_dir = tmp_path / "source_out"
-    code = cli_main([
-        "export",
-        "--source", "filtered-db",
-        "--format", "md",
-        "--token", "tok",
-        "-o", str(out_dir),
-    ], notion=FakeNotion()
+    code = cli_main(
+        [
+            "export",
+            "--source",
+            "filtered-db",
+            "--format",
+            "md",
+            "--token",
+            "tok",
+            "-o",
+            str(out_dir),
+        ],
+        notion=FakeNotion(),
     )
     assert code == 0
 
@@ -622,7 +631,9 @@ def test_normalize_source_ids_dedupes():
     """normalize_source_ids should dedupe IDs while preserving order."""
     from pageout.sources.notion_api import normalize_source_ids
 
-    result = normalize_source_ids("11111111111111111111111111111111 11111111111111111111111111111111 22222222222222222222222222222222")
+    result = normalize_source_ids(
+        "11111111111111111111111111111111 11111111111111111111111111111111 22222222222222222222222222222222"
+    )
     assert len(result) == 2
     assert result == ["11111111111111111111111111111111", "22222222222222222222222222222222"]
 
@@ -641,14 +652,17 @@ def test_normalize_source_ids_rejects_brackets():
 
 
 # ---------------------------------------------------------------------- Test resolve_roots with string sources
-@pytest.mark.parametrize("extra_sources", [
-    [],  # Normal empty list
-    None,  # None
-    "[]",  # JSON string empty array
-    "['" + DB_ID + "']",  # Python repr string
-    '["' + DB_ID + '"]',  # JSON string with one ID
-    DB_ID,  # Single ID string
-])
+@pytest.mark.parametrize(
+    "extra_sources",
+    [
+        [],  # Normal empty list
+        None,  # None
+        "[]",  # JSON string empty array
+        "['" + DB_ID + "']",  # Python repr string
+        '["' + DB_ID + '"]',  # JSON string with one ID
+        DB_ID,  # Single ID string
+    ],
+)
 def test_resolve_roots_extra_sources_normalization(tmp_path, extra_sources):
     """resolve_roots should handle various forms of extra_sources input."""
     from pageout.sources.notion_api import resolve_roots
@@ -673,11 +687,14 @@ def test_resolve_roots_does_not_call_api_with_bracket():
 
 
 # ---------------------------------------------------------------------- Test load_property_names with string source_text
-@pytest.mark.parametrize("source_text", [
-    DB_ID,
-    "https://www.notion.so/" + DB_ID,
-    '["' + DB_ID + '"]',  # JSON string
-])
+@pytest.mark.parametrize(
+    "source_text",
+    [
+        DB_ID,
+        "https://www.notion.so/" + DB_ID,
+        '["' + DB_ID + '"]',  # JSON string
+    ],
+)
 def test_load_property_names_handles_strings(tmp_path, source_text):
     """load_property_names should handle string inputs properly."""
     from pageout.sources.notion_api import load_property_names
