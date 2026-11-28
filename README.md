@@ -2,9 +2,6 @@
   <img src="pageout/assets/banner.jpg" alt="PageOut for Notion" width="100%">
 </p>
 
-<p align="center">
-  <img src="pageout/assets/readme-icon.png" alt="PageOut Icon" width="64">
-</p>
 
 # PageOut for Notion
 
